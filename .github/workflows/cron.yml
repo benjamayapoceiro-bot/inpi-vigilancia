@@ -1,0 +1,23 @@
+name: chequeo-boletines-inpi
+on:
+  schedule:
+    - cron: "0 12 * * 4"  # todos los jueves 12:00 UTC (~9am ARG) — los boletines suelen salir miércoles
+  workflow_dispatch: {}    # permite correrlo a mano desde GitHub
+
+jobs:
+  chequear:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update && sudo apt-get install -y poppler-utils
+          pip install requests pymupdf imagehash pillow
+      - name: Correr cron
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python cron_check_boletines.py
