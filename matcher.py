@@ -1,0 +1,110 @@
+"""
+Motor de matching: compara una lista de "marcas a vigilar" contra las
+actas nuevas de un boletín, filtrando por clase y puntuando similitud
+(texto para marcas denominativas, pHash para marcas mixtas/logos).
+"""
+import json
+import re
+import unicodedata
+from difflib import SequenceMatcher
+
+
+def normalizar_fonetico(s: str) -> str:
+    """Normalización simple para captar similitud fonética en español:
+    saca acentos, agrupa sonidos equivalentes (b/v, s/c/z, y/ll, etc.)
+    y colapsa letras repetidas."""
+    s = s.upper()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    reemplazos = [
+        ("QU", "K"), ("CU", "K"), ("C", "K"), ("Z", "S"),
+        ("V", "B"), ("LL", "Y"), ("H", ""), ("Ñ", "N"),
+        ("PH", "F"), ("W", "V"),
+    ]
+    for a, b in reemplazos:
+        s = s.replace(a, b)
+    s = re.sub(r"(.)\1+", r"\1", s)  # colapsar repetidas: "TT" -> "T"
+    s = re.sub(r"[^A-Z]", "", s)
+    return s
+
+
+def similitud(a: str, b: str) -> dict:
+    a_norm, b_norm = normalizar_fonetico(a), normalizar_fonetico(b)
+    ortografica = SequenceMatcher(None, a.upper(), b.upper()).ratio()
+    fonetica = SequenceMatcher(None, a_norm, b_norm).ratio()
+    return {
+        "ortografica": round(ortografica, 3),
+        "fonetica": round(fonetica, 3),
+        "score": round(max(ortografica, fonetica), 3),
+    }
+
+
+def distancia_logo(hash_a: str, hash_b: str) -> float:
+    """Distancia de Hamming normalizada entre dos pHash (hex de 16 chars = 64 bits).
+    Devuelve score de similitud 0-1 (1 = idéntico), comparable con el de texto."""
+    try:
+        a, b = int(hash_a, 16), int(hash_b, 16)
+    except (ValueError, TypeError):
+        return 0.0
+    xor = a ^ b
+    bits_distintos = bin(xor).count("1")
+    return round(1 - (bits_distintos / 64), 3)
+
+
+def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_logo=0.80):
+    """
+    marcas_vigiladas: [{"nombre": "TORTE", "clase": 30, "cliente": "...",
+                         "tipo": "D"|"M", "logo_phash": "..." (si tipo M)}, ...]
+    actas_nuevas: output de parse_boletin.py, con logo_phash agregado por
+                  extract_logos.py para las actas tipo M.
+    """
+    alertas = []
+    for vig in marcas_vigiladas:
+        for acta in actas_nuevas:
+            if acta["clase"] != vig["clase"]:
+                continue
+
+            # --- Marca denominativa: comparación de texto ---
+            if vig.get("tipo", "D") == "D" and acta["denominacion"]:
+                sim = similitud(vig["nombre"], acta["denominacion"])
+                if sim["score"] >= umbral:
+                    alertas.append({
+                        "tipo_match": "texto",
+                        "marca_vigilada": vig["nombre"], "cliente": vig.get("cliente", ""),
+                        "clase": vig["clase"], "acta_nueva": acta["acta"],
+                        "denominacion_nueva": acta["denominacion"],
+                        "titular_nuevo": acta["titulares"], "similitud": sim,
+                    })
+
+            # --- Marca mixta: comparación de logo por pHash ---
+            elif vig.get("tipo") == "M" and vig.get("logo_phash") and acta.get("logo_phash"):
+                score_logo = distancia_logo(vig["logo_phash"], acta["logo_phash"])
+                if score_logo >= umbral_logo:
+                    alertas.append({
+                        "tipo_match": "logo",
+                        "marca_vigilada": vig["nombre"] or "(logo sin texto)",
+                        "cliente": vig.get("cliente", ""),
+                        "clase": vig["clase"], "acta_nueva": acta["acta"],
+                        "denominacion_nueva": acta["denominacion"],
+                        "titular_nuevo": acta["titulares"],
+                        "similitud": {"ortografica": 0, "fonetica": 0, "score": score_logo},
+                    })
+
+    alertas.sort(key=lambda x: -x["similitud"]["score"])
+    return alertas
+
+
+if __name__ == "__main__":
+    import sys
+
+    actas = []
+    for f in sys.argv[2:]:
+        actas.extend(json.load(open(f)))
+
+    # Ejemplo de cartera a vigilar — reemplazar por tus marcas + las de tus clientes
+    marcas_vigiladas = json.loads(open(sys.argv[1]).read())
+
+    alertas = buscar_coincidencias(marcas_vigiladas, actas)
+    print(f"{len(actas)} actas analizadas, {len(alertas)} alertas (umbral 0.72)\n")
+    for al in alertas[:30]:
+        print(f"[{al['similitud']['score']}] '{al['marca_vigilada']}' (clase {al['clase']}, cliente: {al['cliente']}) "
+              f"~ '{al['denominacion_nueva']}' (Acta {al['acta_nueva']}, titular: {al['titular_nuevo']})")
