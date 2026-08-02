@@ -83,7 +83,8 @@ def run():
             r'<td[^>]*>\s*MARCAS NUEVAS',
             html, re.DOTALL | re.IGNORECASE,
         )
-        return [{"numero": n, "fecha": f, "url": u} for n, f, u in filas]
+        return [{"numero": n, "fecha": f, "url": u if u.startswith("http") else f"https://portaltramites.inpi.gob.ar{u}"}
+                for n, f, u in filas]
 
     ya_procesados = {
         b["numero_boletin"] for b in supabase_get("boletines_procesados", "select=numero_boletin")
