@@ -148,7 +148,9 @@ def run():
 
 
 if __name__ == "__main__":
+    reportar_a_supabase("heartbeat: arrancó el script")
     try:
+        reportar_a_supabase("heartbeat: entrando a run()")
         run()
     except Exception:
         tb = traceback.format_exc()
