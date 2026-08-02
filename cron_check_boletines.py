@@ -48,6 +48,7 @@ def reportar_a_supabase(mensaje: str):
 def run():
     import re
     import json
+    import subprocess
     from datetime import datetime
 
     from parse_boletin import parse_boletin
@@ -94,6 +95,7 @@ def run():
     reportar_a_supabase(f"Listado INPI: {len(boletines)} boletines encontrados en la página")
 
     nuevos = [b for b in boletines if b["numero"] not in ya_procesados]
+    nuevos = sorted(nuevos, key=lambda b: b["numero"])[:4]  # tope por corrida, el resto se procesa en la próxima
 
     if not nuevos:
         reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
@@ -110,7 +112,7 @@ def run():
         txt_path = f"/tmp/{b['numero']}.txt"
         with open(pdf_path, "wb") as f:
             f.write(pdf_bytes)
-        os.system(f"pdftotext -layout {pdf_path} {txt_path}")
+        subprocess.run(["pdftotext", "-layout", pdf_path, txt_path], timeout=60, check=True)
 
         actas = parse_boletin(txt_path)
 
@@ -144,6 +146,7 @@ def run():
             "tipo": "MARCAS NUEVAS",
             "actas_encontradas": len(actas),
         }])
+        reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
 
     reportar_a_supabase(f"OK: corrida completa, {len(nuevos)} boletines procesados")
 
