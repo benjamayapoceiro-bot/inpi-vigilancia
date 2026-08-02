@@ -125,4 +125,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import traceback
+    try:
+        main()
+        supabase_insert("debug_logs", [{"mensaje": "OK: corrida completa sin errores"}])
+    except Exception:
+        tb = traceback.format_exc()
+        print(tb)
+        try:
+            supabase_insert("debug_logs", [{"mensaje": tb[:4000]}])
+        except Exception as e2:
+            print("no se pudo ni loguear el error:", e2)
+        raise
