@@ -16,6 +16,12 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y poppler-utils
           pip install requests pymupdf imagehash pillow
+      - name: Diagnóstico de imports
+        run: |
+          python -c "import requests; print('requests OK')"
+          python -c "import fitz; print('fitz OK', fitz.__doc__)"
+          python -c "import imagehash; print('imagehash OK')"
+          python -c "import PIL; print('PIL OK')"
       - name: Correr cron
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
