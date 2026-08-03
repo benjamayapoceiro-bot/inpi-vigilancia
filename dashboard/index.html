@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vigilancia de Marcas — INPI</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Serif+4:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --paper: #F6F3EC;
+    --ink: #1C2333;
+    --ink-soft: #4A5268;
+    --rule: #D8D2C2;
+    --rust: #A8461E;
+    --rust-soft: #F2E2D8;
+    --amber: #C08A2E;
+    --amber-soft: #F5EAD4;
+    --green: #3D6B4F;
+    --green-soft: #E1EBE3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: 'Source Serif 4', Georgia, serif;
+    line-height: 1.5;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  header {
+    border-bottom: 1px solid var(--rule);
+    padding: 28px 32px 20px;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  header h1 {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 26px; margin: 0;
+    letter-spacing: -0.01em;
+  }
+  header .sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); letter-spacing: 0.06em; text-transform: uppercase; }
+  main { max-width: 920px; margin: 0 auto; padding: 32px; }
+  .panel { border: 1px solid var(--rule); background: #fff; margin-bottom: 28px; }
+  .panel-head {
+    padding: 14px 20px; border-bottom: 1px solid var(--rule);
+    display: flex; justify-content: space-between; align-items: center;
+    background: #FBF9F4;
+  }
+  .panel-head h2 { font-family: 'Fraunces', serif; font-size: 16px; margin: 0; font-weight: 600; }
+  .panel-body { padding: 4px 0; }
+  .row { display: flex; gap: 10px; padding: 16px 20px; }
+  input, select, button {
+    font-family: 'Source Serif 4', serif; font-size: 14px;
+    border: 1px solid var(--rule); background: #fff; padding: 8px 10px;
+  }
+  button {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; cursor: pointer; background: var(--ink); color: var(--paper);
+    border: none; padding: 9px 16px;
+  }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--rule); }
+  button:hover { opacity: 0.85; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 10px 20px; text-align: left; border-bottom: 1px solid var(--rule); font-size: 14px; }
+  th { font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
+  .acta-card { border-bottom: 1px solid var(--rule); padding: 18px 20px; }
+  .acta-card:last-child { border-bottom: none; }
+  .acta-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .acta-num { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); }
+  .badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 9px;
+    display: inline-block; white-space: nowrap;
+  }
+  .badge.alto { background: var(--rust-soft); color: var(--rust); }
+  .badge.medio { background: var(--amber-soft); color: var(--amber); }
+  .badge.logo { background: var(--green-soft); color: var(--green); }
+  .versus { font-family: 'Fraunces', serif; font-size: 17px; margin: 6px 0 4px; }
+  .versus b { font-weight: 600; }
+  .meta { font-size: 13px; color: var(--ink-soft); }
+  .borrador {
+    margin-top: 12px; padding: 14px; background: #FBF9F4; border-left: 3px solid var(--rust);
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; white-space: pre-wrap;
+    max-height: 220px; overflow-y: auto;
+  }
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-soft); font-size: 14px; }
+  .login-box { max-width: 380px; margin: 80px auto; padding: 32px; border: 1px solid var(--rule); background: #fff; }
+  .login-box h1 { font-family: 'Fraunces', serif; font-size: 22px; margin-top: 0; }
+  .login-box input { width: 100%; margin-bottom: 10px; }
+  .login-box button { width: 100%; }
+  .error { color: var(--rust); font-size: 13px; margin-top: 8px; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  select.estado { font-size: 12px; padding: 5px 8px; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// ⚠️ Reemplazar por tu Project URL y anon/publishable key (Project Settings → API Keys)
+const SUPABASE_URL = "https://oomczohvjqycpuhhmotv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_OwKVJX834gmqXdjT8o3DGg_Tdz5YZpa";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById('app');
+
+let session = null;
+
+async function init() {
+  const { data } = await supabase.auth.getSession();
+  session = data.session;
+  supabase.auth.onAuthStateChange((_event, s) => { session = s; render(); });
+  render();
+}
+
+function renderLogin(mode = 'login', error = '') {
+  app.innerHTML = `
+    <div class="login-box">
+      <h1>Vigilancia de Marcas</h1>
+      <p class="meta">Alertas automáticas de marcas nuevas del INPI similares a tu cartera.</p>
+      <input id="email" type="email" placeholder="email@estudio.com" />
+      <input id="password" type="password" placeholder="contraseña" />
+      <button id="btn-submit">${mode === 'login' ? 'Ingresar' : 'Crear cuenta'}</button>
+      ${error ? `<div class="error">${error}</div>` : ''}
+      <p class="meta" style="margin-top:14px;">
+        ${mode === 'login'
+          ? `¿No tenés cuenta? <a href="#" id="toggle">Crear una</a>`
+          : `¿Ya tenés cuenta? <a href="#" id="toggle">Ingresar</a>`}
+      </p>
+    </div>`;
+  document.getElementById('toggle').onclick = (e) => { e.preventDefault(); renderLogin(mode === 'login' ? 'signup' : 'login'); };
+  document.getElementById('btn-submit').onclick = async () => {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const fn = mode === 'login' ? supabase.auth.signInWithPassword : supabase.auth.signUp;
+    const { error } = await fn.call(supabase.auth, { email, password });
+    if (error) return renderLogin(mode, error.message);
+    render();
+  };
+}
+
+async function render() {
+  if (!session) return renderLogin();
+
+  app.innerHTML = `
+    <header>
+      <div>
+        <h1>Vigilancia de Marcas</h1>
+        <div class="sub">INPI · alertas semanales</div>
+      </div>
+      <div>
+        <span class="meta">${session.user.email}</span>
+        <button class="ghost" id="logout" style="margin-left:12px;">Salir</button>
+      </div>
+    </header>
+    <main>
+      <div class="panel" id="panel-cartera">
+        <div class="panel-head"><h2>Cartera vigilada</h2></div>
+        <div class="panel-body">
+          <div class="row">
+            <input id="nueva-nombre" placeholder="Nombre de marca" style="flex:2;" />
+            <input id="nueva-clase" placeholder="Clase" type="number" style="width:70px;" />
+            <input id="nueva-cliente" placeholder="Cliente (opcional)" style="flex:1;" />
+            <button id="btn-agregar">Agregar</button>
+          </div>
+          <table id="tabla-cartera"></table>
+        </div>
+      </div>
+      <div class="panel" id="panel-alertas">
+        <div class="panel-head"><h2>Alertas</h2></div>
+        <div class="panel-body" id="lista-alertas"></div>
+      </div>
+    </main>`;
+
+  document.getElementById('logout').onclick = () => supabase.auth.signOut();
+  document.getElementById('btn-agregar').onclick = agregarMarca;
+
+  await cargarCartera();
+  await cargarAlertas();
+}
+
+async function cargarCartera() {
+  const { data } = await supabase.from('marcas_vigiladas').select('*').order('created_at', { ascending: false });
+  const tabla = document.getElementById('tabla-cartera');
+  if (!data || !data.length) {
+    tabla.innerHTML = `<tr><td class="empty">Sin marcas cargadas todavía.</td></tr>`;
+    return;
+  }
+  tabla.innerHTML = `
+    <tr><th>Marca</th><th>Clase</th><th>Cliente</th></tr>
+    ${data.map(m => `<tr><td>${m.nombre || '(logo)'}</td><td>${m.clase}</td><td>${m.cliente || '—'}</td></tr>`).join('')}`;
+}
+
+async function agregarMarca() {
+  const nombre = document.getElementById('nueva-nombre').value.trim();
+  const clase = parseInt(document.getElementById('nueva-clase').value, 10);
+  const cliente = document.getElementById('nueva-cliente').value.trim();
+  if (!nombre || !clase) return alert('Falta nombre o clase');
+  await supabase.from('marcas_vigiladas').insert([{ nombre, clase, cliente, propietario_user_id: session.user.id }]);
+  document.getElementById('nueva-nombre').value = '';
+  document.getElementById('nueva-clase').value = '';
+  document.getElementById('nueva-cliente').value = '';
+  cargarCartera();
+}
+
+async function cargarAlertas() {
+  const { data } = await supabase
+    .from('alertas')
+    .select('*, marcas_vigiladas(nombre, cliente)')
+    .order('similitud_score', { ascending: false })
+    .limit(100);
+
+  const cont = document.getElementById('lista-alertas');
+  if (!data || !data.length) {
+    cont.innerHTML = `<div class="empty">Sin alertas todavía. Vas a ver acá las coincidencias que encuentre el chequeo semanal.</div>`;
+    return;
+  }
+
+  cont.innerHTML = data.map(a => {
+    const score = Math.round((a.similitud_score || 0) * 100);
+    const badgeClass = a.tipo_match === 'logo' ? 'logo' : (score >= 85 ? 'alto' : 'medio');
+    const badgeLabel = a.tipo_match === 'logo' ? `logo ${score}%` : `texto ${score}%`;
+    return `
+    <div class="acta-card">
+      <div class="acta-top">
+        <div>
+          <div class="versus">
+            <b>${a.marcas_vigiladas?.nombre || '(marca)'}</b> vs <b>${a.denominacion_nueva || '(marca mixta)'}</b>
+          </div>
+          <div class="meta">Acta ${a.acta_nueva} · Clase ${a.clase} · Boletín ${a.boletin_numero}
+            ${a.marcas_vigiladas?.cliente ? '· Cliente: ' + a.marcas_vigiladas.cliente : ''}</div>
+        </div>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
+      </div>
+      ${a.borrador_oposicion ? `<div class="borrador">${a.borrador_oposicion}</div>` : ''}
+      <div class="actions">
+        <select class="estado" data-id="${a.id}">
+          <option value="nueva" ${a.estado === 'nueva' ? 'selected' : ''}>Nueva</option>
+          <option value="revisada" ${a.estado === 'revisada' ? 'selected' : ''}>Revisada</option>
+          <option value="oposicion_presentada" ${a.estado === 'oposicion_presentada' ? 'selected' : ''}>Oposición presentada</option>
+          <option value="descartada" ${a.estado === 'descartada' ? 'selected' : ''}>Descartada</option>
+        </select>
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('select.estado').forEach(sel => {
+    sel.onchange = async () => {
+      await supabase.from('alertas').update({ estado: sel.value, revisada: sel.value !== 'nueva' }).eq('id', sel.dataset.id);
+    };
+  });
+}
+
+init();
+</script>
+</body>
+</html>
