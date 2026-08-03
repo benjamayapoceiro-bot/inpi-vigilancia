@@ -54,6 +54,8 @@ def run():
     from parse_boletin import parse_boletin
     from matcher import buscar_coincidencias
     from extract_logos import extraer_logos
+    from mantenimiento_cartera import procesar_logos_pendientes, generar_avisos_vencimiento
+    from notificar_email import enviar_resumen
 
     INPI_LISTADO = "https://portaltramites.inpi.gob.ar/Boletines?Tipo_Item=3"
 
@@ -73,6 +75,15 @@ def run():
             return
         r = requests.post(f"{SUPABASE_URL}/rest/v1/{tabla}", headers=HEADERS, json=rows, timeout=30)
         r.raise_for_status()
+
+    def supabase_patch(tabla, id_, campos):
+        r = requests.patch(f"{SUPABASE_URL}/rest/v1/{tabla}?id=eq.{id_}", headers=HEADERS, json=campos, timeout=30)
+        r.raise_for_status()
+
+    # Mantenimiento de cartera: procesa logos subidos desde el dashboard y
+    # genera avisos de vencimiento — se hace en cada corrida, haya o no boletines nuevos.
+    procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert)
+    avisos_venc = generar_avisos_vencimiento(supabase_get, supabase_insert)
 
     def listar_boletines_marcas_nuevas():
         r = requests.get(INPI_LISTADO, timeout=30)
@@ -98,6 +109,7 @@ def run():
     nuevos = sorted(nuevos, key=lambda b: b["numero"])[:4]  # tope por corrida, el resto se procesa en la próxima
 
     if not nuevos:
+        enviar_resumen([], avisos_venc)
         reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
         return
 
@@ -106,6 +118,7 @@ def run():
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
                 "logo_phash": m.get("logo_phash")} for m in cartera]
 
+    todas_las_alertas_fuertes = []
     for b in nuevos:
         pdf_bytes = requests.get(b["url"], timeout=60).content
         pdf_path = f"/tmp/{b['numero']}.pdf"
@@ -149,7 +162,9 @@ def run():
             "actas_encontradas": len(actas),
         }])
         reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
+        todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
 
+    enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
     reportar_a_supabase(f"OK: corrida completa, {len(nuevos)} boletines procesados")
 
 
