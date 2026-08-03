@@ -137,7 +137,7 @@ def run():
             "similitud_fonetica": al["similitud"]["fonetica"],
             "similitud_logo": al["similitud"]["score"] if al["tipo_match"] == "logo" else None,
             "similitud_score": al["similitud"]["score"],
-            "requiere_atencion": al["requiere_atencion"],
+            "requiere_oposicion": al["requiere_atencion"],
             "borrador_oposicion": al["borrador_oposicion"],
         } for al in alertas]
 
