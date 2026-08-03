@@ -50,6 +50,35 @@ def distancia_logo(hash_a: str, hash_b: str) -> float:
     return round(1 - (bits_distintos / 64), 3)
 
 
+UMBRAL_ATENCION = 0.85  # a partir de acá, generamos borrador de oposición
+
+
+def generar_borrador_oposicion(alerta: dict) -> str:
+    """Borrador de oposición basado en template — SIEMPRE requiere revisión humana
+    antes de presentarse. No se presenta nada automáticamente."""
+    titulares = ", ".join(t["nombre"] for t in alerta["titular_nuevo"]) or "titular no identificado"
+    motivo = (
+        f"similitud fonética/ortográfica del {alerta['similitud']['score']*100:.0f}%"
+        if alerta["tipo_match"] == "texto"
+        else f"similitud visual del logo del {alerta['similitud']['score']*100:.0f}%"
+    )
+    return (
+        f"BORRADOR — Oposición al registro de marca\n\n"
+        f"Acta impugnada: {alerta['acta_nueva']}\n"
+        f"Denominación: {alerta['denominacion_nueva'] or '(marca mixta/figurativa)'}\n"
+        f"Clase: {alerta['clase']}\n"
+        f"Titular solicitante: {titulares}\n\n"
+        f"Marca opositora (vigilada): {alerta['marca_vigilada']}"
+        f"{' — cliente: ' + alerta['cliente'] if alerta['cliente'] else ''}\n\n"
+        f"Fundamento preliminar: se detecta {motivo} entre la marca solicitada "
+        f"y la marca opositora, en la misma clase de Niza, lo que podría generar "
+        f"confusión en el público consumidor (art. 3 inc. a y b, Ley 22.362).\n\n"
+        f"[ESTE ES UN BORRADOR AUTOMÁTICO — revisar antecedentes, verificar vigencia "
+        f"del derecho opositor, y completar fundamentos antes de presentar por TAD. "
+        f"Plazo: 30 días hábiles desde la publicación.]"
+    )
+
+
 def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_logo=0.80):
     """
     marcas_vigiladas: [{"nombre": "TORTE", "clase": 30, "cliente": "...",
@@ -90,6 +119,15 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_log
                     })
 
     alertas.sort(key=lambda x: -x["similitud"]["score"])
+
+    for al in alertas:
+        if al["similitud"]["score"] >= UMBRAL_ATENCION:
+            al["requiere_atencion"] = True
+            al["borrador_oposicion"] = generar_borrador_oposicion(al)
+        else:
+            al["requiere_atencion"] = False
+            al["borrador_oposicion"] = None
+
     return alertas
 
 
