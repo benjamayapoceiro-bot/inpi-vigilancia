@@ -1,0 +1,28 @@
+name: rescan-cartera
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  rescan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          sudo apt-get update && sudo apt-get install -y poppler-utils
+          pip install requests pymupdf imagehash pillow
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python rescan_cartera.py > rescan_output.txt 2>&1 || true
+      - run: |
+          git config user.email "bot@bot.com"
+          git config user.name "cron-bot"
+          git add rescan_output.txt
+          git commit -m "rescan output" || echo "nada"
+          git push
