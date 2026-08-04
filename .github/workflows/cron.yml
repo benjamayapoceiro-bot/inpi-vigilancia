@@ -41,6 +41,8 @@ jobs:
         run: |
           git config user.email "bot@bot.com"
           git config user.name "cron-bot"
+          git pull --rebase origin main || true
           git add debug/last_run.txt
           git commit -m "debug log $(date -u +%Y-%m-%dT%H:%M:%SZ)" || echo "nada para commitear"
-          git push
+          git push || echo "no se pudo pushear el log, no es crítico"
+        continue-on-error: true
