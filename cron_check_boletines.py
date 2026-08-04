@@ -154,13 +154,13 @@ def run():
             "borrador_oposicion": al["borrador_oposicion"],
         } for al in alertas]
 
-        supabase_insert("alertas", rows)
         supabase_insert("boletines_procesados", [{
             "numero_boletin": b["numero"],
             "fecha_boletin": datetime.strptime(b["fecha"], "%d/%m/%Y").date().isoformat(),
             "tipo": "MARCAS NUEVAS",
             "actas_encontradas": len(actas),
         }])
+        supabase_insert("alertas", rows)
         reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
         todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
 
