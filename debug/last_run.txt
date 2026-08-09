@@ -1,3 +1,4 @@
-Mail de resumen enviado.
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+no se pudo procesar logo de 6d82e483-8624-4399-b043-05cb79b24de6: Invalid base64-encoded string: number of data characters (7713) cannot be 1 more than a multiple of 4
 --- curl directo a Supabase ---
 HTTP_STATUS:201
