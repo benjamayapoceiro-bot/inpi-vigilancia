@@ -70,6 +70,16 @@ def run():
         r.raise_for_status()
         return r.json()
 
+    def supabase_upsert(tabla, rows, on_conflict):
+        if not rows:
+            return
+        headers = {**HEADERS, "Prefer": "resolution=merge-duplicates"}
+        r = requests.post(
+            f"{SUPABASE_URL}/rest/v1/{tabla}?on_conflict={on_conflict}",
+            headers=headers, json=rows, timeout=60,
+        )
+        r.raise_for_status()
+
     def supabase_insert(tabla, rows):
         if not rows:
             return
@@ -113,10 +123,10 @@ def run():
         reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
         return
 
-    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash")
+    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash")
     cartera = [{"id": m["id"], "nombre": m["nombre"], "clase": m["clase"],
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
-                "logo_phash": m.get("logo_phash")} for m in cartera]
+                "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash")} for m in cartera]
 
     todas_las_alertas_fuertes = []
     for b in nuevos:
@@ -132,7 +142,8 @@ def run():
         logos = extraer_logos(pdf_path)
         for acta in actas:
             if acta["tipo"] == "M" and acta["acta"] in logos:
-                acta["logo_phash"] = logos[acta["acta"]]
+                acta["logo_phash"] = logos[acta["acta"]]["phash"]
+                acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
 
         alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
 
