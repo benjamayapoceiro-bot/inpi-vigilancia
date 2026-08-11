@@ -38,9 +38,9 @@ def similitud(a: str, b: str) -> dict:
     }
 
 
-def distancia_logo(hash_a: str, hash_b: str) -> float:
-    """Distancia de Hamming normalizada entre dos pHash (hex de 16 chars = 64 bits).
-    Devuelve score de similitud 0-1 (1 = idéntico), comparable con el de texto."""
+def distancia_hash(hash_a: str, hash_b: str) -> float:
+    """Distancia de Hamming normalizada entre dos hashes hex de 64 bits.
+    Devuelve score de similitud 0-1 (1 = idéntico)."""
     try:
         a, b = int(hash_a, 16), int(hash_b, 16)
     except (ValueError, TypeError):
@@ -48,6 +48,23 @@ def distancia_logo(hash_a: str, hash_b: str) -> float:
     xor = a ^ b
     bits_distintos = bin(xor).count("1")
     return round(1 - (bits_distintos / 64), 3)
+
+
+def distancia_logo_combinada(vig: dict, acta: dict) -> float:
+    """Combina pHash (estructura de frecuencias, robusto a color/recortes) y
+    dHash (gradientes de brillo, robusto a variaciones de contraste). Usar los
+    dos algoritmos en simultáneo baja bastante los falsos positivos que da
+    cualquiera de los dos por separado. Si a algún logo le falta uno de los
+    dos hashes (ej. logos cargados antes de sumar dHash), cae a comparar
+    solo con el que esté disponible."""
+    scores = []
+    if vig.get("logo_phash") and acta.get("logo_phash"):
+        scores.append(distancia_hash(vig["logo_phash"], acta["logo_phash"]))
+    if vig.get("logo_dhash") and acta.get("logo_dhash"):
+        scores.append(distancia_hash(vig["logo_dhash"], acta["logo_dhash"]))
+    if not scores:
+        return 0.0
+    return round(sum(scores) / len(scores), 3)
 
 
 UMBRAL_ATENCION = 0.85  # a partir de acá, generamos borrador de oposición
@@ -104,9 +121,9 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_log
                         "titular_nuevo": acta["titulares"], "similitud": sim,
                     })
 
-            # --- Marca mixta: comparación de logo por pHash ---
-            elif vig.get("tipo") == "M" and vig.get("logo_phash") and acta.get("logo_phash"):
-                score_logo = distancia_logo(vig["logo_phash"], acta["logo_phash"])
+            # --- Marca mixta: comparación de logo por hash combinado (pHash + dHash) ---
+            elif vig.get("tipo") == "M" and (vig.get("logo_phash") or vig.get("logo_dhash")):
+                score_logo = distancia_logo_combinada(vig, acta)
                 if score_logo >= umbral_logo:
                     alertas.append({
                         "tipo_match": "logo",
