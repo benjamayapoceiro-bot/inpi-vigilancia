@@ -23,8 +23,9 @@ def procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert):
             img_bytes = base64.b64decode(m["logo_pendiente"])
             im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             phash = str(imagehash.phash(im))
+            dhash = str(imagehash.dhash(im))
             supabase_patch("marcas_vigiladas", m["id"], {
-                "logo_phash": phash, "logo_pendiente": None,
+                "logo_phash": phash, "logo_dhash": dhash, "logo_pendiente": None,
             })
         except Exception as e:
             print(f"no se pudo procesar logo de {m['id']}: {e}")
