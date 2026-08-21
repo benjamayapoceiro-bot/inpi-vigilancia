@@ -17,6 +17,7 @@ diagnosticar sin depender de los logs de GitHub Actions.
 """
 import os
 import sys
+import time
 import traceback
 import requests
 
@@ -116,7 +117,8 @@ def run():
     reportar_a_supabase(f"Listado INPI: {len(boletines)} boletines encontrados en la página")
 
     nuevos = [b for b in boletines if b["numero"] not in ya_procesados]
-    nuevos = sorted(nuevos, key=lambda b: b["numero"])[:4]  # tope por corrida, el resto se procesa en la próxima
+    nuevos = sorted(nuevos, key=lambda b: b["numero"])
+    reportar_a_supabase(f"Pendientes de procesar: {len(nuevos)} boletines")
 
     if not nuevos:
         enviar_resumen([], avisos_venc)
@@ -129,7 +131,18 @@ def run():
                 "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash")} for m in cartera]
 
     todas_las_alertas_fuertes = []
+    inicio = time.time()
+    PRESUPUESTO_SEGUNDOS = 12 * 60  # deja margen dentro del límite de GitHub Actions
+    procesados_esta_corrida = 0
+
     for b in nuevos:
+        if time.time() - inicio > PRESUPUESTO_SEGUNDOS:
+            reportar_a_supabase(
+                f"Presupuesto de tiempo agotado: {procesados_esta_corrida}/{len(nuevos)} procesados esta corrida, "
+                f"el resto sigue en la próxima."
+            )
+            break
+
         pdf_bytes = requests.get(b["url"], timeout=60).content
         pdf_path = f"/tmp/{b['numero']}.pdf"
         txt_path = f"/tmp/{b['numero']}.txt"
@@ -173,10 +186,11 @@ def run():
         }])
         supabase_insert("alertas", rows)
         reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
+        procesados_esta_corrida += 1
         todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
 
     enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
-    reportar_a_supabase(f"OK: corrida completa, {len(nuevos)} boletines procesados")
+    reportar_a_supabase(f"OK: corrida completa, {procesados_esta_corrida} de {len(nuevos)} boletines procesados")
 
 
 if __name__ == "__main__":
