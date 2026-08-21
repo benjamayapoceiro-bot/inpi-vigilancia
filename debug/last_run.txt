@@ -1,3 +1,4 @@
 warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Mail de resumen enviado.
 --- curl directo a Supabase ---
 HTTP_STATUS:201
