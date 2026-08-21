@@ -31,10 +31,21 @@ def similitud(a: str, b: str) -> dict:
     a_norm, b_norm = normalizar_fonetico(a), normalizar_fonetico(b)
     ortografica = SequenceMatcher(None, a.upper(), b.upper()).ratio()
     fonetica = SequenceMatcher(None, a_norm, b_norm).ratio()
+
+    # Contención: si una marca es el núcleo dominante de la otra (más larga),
+    # el ratio de SequenceMatcher sobre las cadenas completas subestima el
+    # riesgo real — caso típico: "AYUDIN" vs "AYUDIN ANTI-SPLASH", donde el
+    # agregado busca justamente esquivar la comparación literal.
+    contencion = 0.0
+    if len(a_norm) >= 4 and len(b_norm) >= 4 and (a_norm in b_norm or b_norm in a_norm):
+        corto, largo = (a_norm, b_norm) if len(a_norm) <= len(b_norm) else (b_norm, a_norm)
+        contencion = round(0.75 + 0.25 * (len(corto) / len(largo)), 3)
+
     return {
         "ortografica": round(ortografica, 3),
         "fonetica": round(fonetica, 3),
-        "score": round(max(ortografica, fonetica), 3),
+        "contencion": contencion,
+        "score": round(max(ortografica, fonetica, contencion), 3),
     }
 
 
