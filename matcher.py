@@ -32,6 +32,16 @@ def similitud(a: str, b: str) -> dict:
     ortografica = SequenceMatcher(None, a.upper(), b.upper()).ratio()
     fonetica = SequenceMatcher(None, a_norm, b_norm).ratio()
 
+    # Orden de palabras: "CASA CUMBRE" vs "CUMBRE CASA" son la misma marca
+    # en la práctica, pero SequenceMatcher sobre la cadena completa las
+    # penaliza fuerte por el orden. Se compara con las palabras ordenadas
+    # alfabéticamente (y ya normalizadas fonéticamente) para neutralizar eso.
+    palabras_a = sorted(normalizar_fonetico(w) for w in re.findall(r"\w+", a))
+    palabras_b = sorted(normalizar_fonetico(w) for w in re.findall(r"\w+", b))
+    orden = 0.0
+    if len(palabras_a) > 1 or len(palabras_b) > 1:
+        orden = SequenceMatcher(None, "".join(palabras_a), "".join(palabras_b)).ratio()
+
     # Contención: si una marca es el núcleo dominante de la otra (más larga),
     # el ratio de SequenceMatcher sobre las cadenas completas subestima el
     # riesgo real — caso típico: "AYUDIN" vs "AYUDIN ANTI-SPLASH", donde el
@@ -44,8 +54,9 @@ def similitud(a: str, b: str) -> dict:
     return {
         "ortografica": round(ortografica, 3),
         "fonetica": round(fonetica, 3),
+        "orden": round(orden, 3),
         "contencion": contencion,
-        "score": round(max(ortografica, fonetica, contencion), 3),
+        "score": round(max(ortografica, fonetica, orden, contencion), 3),
     }
 
 
