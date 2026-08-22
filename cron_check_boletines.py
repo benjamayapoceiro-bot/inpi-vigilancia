@@ -143,51 +143,54 @@ def run():
             )
             break
 
-        pdf_bytes = requests.get(b["url"], timeout=60).content
-        pdf_path = f"/tmp/{b['numero']}.pdf"
-        txt_path = f"/tmp/{b['numero']}.txt"
-        with open(pdf_path, "wb") as f:
-            f.write(pdf_bytes)
-        subprocess.run(["pdftotext", "-layout", pdf_path, txt_path], timeout=60, check=True)
+        try:
+            pdf_bytes = requests.get(b["url"], timeout=60)
+            pdf_bytes.raise_for_status()
+            pdf_path = f"/tmp/{b['numero']}.pdf"
+            txt_path = f"/tmp/{b['numero']}.txt"
+            with open(pdf_path, "wb") as f:
+                f.write(pdf_bytes.content)
+            subprocess.run(["pdftotext", "-layout", pdf_path, txt_path], timeout=60, check=True)
 
-        actas = parse_boletin(txt_path)
+            actas = parse_boletin(txt_path)
 
-        logos = extraer_logos(pdf_path)
-        for acta in actas:
-            if acta["tipo"] == "M" and acta["acta"] in logos:
-                acta["logo_phash"] = logos[acta["acta"]]["phash"]
-                acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
+            logos = extraer_logos(pdf_path)
+            for acta in actas:
+                if acta["tipo"] == "M" and acta["acta"] in logos:
+                    acta["logo_phash"] = logos[acta["acta"]]["phash"]
+                    acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
 
-        alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
+            alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
 
-        rows = [{
-            "marca_vigilada_id": next(
-                (m["id"] for m in cartera if m["nombre"] == al["marca_vigilada"]
-                 and m["clase"] == al["clase"]), None),
-            "tipo_match": al["tipo_match"],
-            "acta_nueva": al["acta_nueva"],
-            "denominacion_nueva": al["denominacion_nueva"],
-            "clase": al["clase"],
-            "titular_nuevo": al["titular_nuevo"],
-            "boletin_numero": b["numero"],
-            "similitud_ortografica": al["similitud"]["ortografica"],
-            "similitud_fonetica": al["similitud"]["fonetica"],
-            "similitud_logo": al["similitud"]["score"] if al["tipo_match"] == "logo" else None,
-            "similitud_score": al["similitud"]["score"],
-            "requiere_oposicion": al["requiere_atencion"],
-            "borrador_oposicion": al["borrador_oposicion"],
-        } for al in alertas]
+            rows = [{
+                "marca_vigilada_id": al["marca_vigilada_id"],
+                "tipo_match": al["tipo_match"],
+                "acta_nueva": al["acta_nueva"],
+                "denominacion_nueva": al["denominacion_nueva"],
+                "clase": al["clase"],
+                "titular_nuevo": al["titular_nuevo"],
+                "boletin_numero": b["numero"],
+                "similitud_ortografica": al["similitud"]["ortografica"],
+                "similitud_fonetica": al["similitud"]["fonetica"],
+                "similitud_logo": al["similitud"]["score"] if al["tipo_match"] == "logo" else None,
+                "similitud_score": al["similitud"]["score"],
+                "requiere_oposicion": al["requiere_atencion"],
+                "borrador_oposicion": al["borrador_oposicion"],
+            } for al in alertas]
 
-        supabase_insert("boletines_procesados", [{
-            "numero_boletin": b["numero"],
-            "fecha_boletin": datetime.strptime(b["fecha"], "%d/%m/%Y").date().isoformat(),
-            "tipo": "MARCAS NUEVAS",
-            "actas_encontradas": len(actas),
-        }])
-        supabase_insert("alertas", rows)
-        reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
-        procesados_esta_corrida += 1
-        todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
+            supabase_insert("boletines_procesados", [{
+                "numero_boletin": b["numero"],
+                "fecha_boletin": datetime.strptime(b["fecha"], "%d/%m/%Y").date().isoformat(),
+                "tipo": "MARCAS NUEVAS",
+                "actas_encontradas": len(actas),
+            }])
+            supabase_insert("alertas", rows)
+            reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
+            procesados_esta_corrida += 1
+            todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
+        except Exception as e:
+            reportar_a_supabase(f"boletin {b['numero']} FALLO, sigo con el resto: {e}")
+            continue
 
     enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
     reportar_a_supabase(f"OK: corrida completa, {procesados_esta_corrida} de {len(nuevos)} boletines procesados")
