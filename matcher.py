@@ -137,6 +137,7 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_log
                 if sim["score"] >= umbral:
                     alertas.append({
                         "tipo_match": "texto",
+                        "marca_vigilada_id": vig.get("id"),
                         "marca_vigilada": vig["nombre"], "cliente": vig.get("cliente", ""),
                         "clase": vig["clase"], "acta_nueva": acta["acta"],
                         "denominacion_nueva": acta["denominacion"],
@@ -149,6 +150,7 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_log
                 if score_logo >= umbral_logo:
                     alertas.append({
                         "tipo_match": "logo",
+                        "marca_vigilada_id": vig.get("id"),
                         "marca_vigilada": vig["nombre"] or "(logo sin texto)",
                         "cliente": vig.get("cliente", ""),
                         "clase": vig["clase"], "acta_nueva": acta["acta"],
