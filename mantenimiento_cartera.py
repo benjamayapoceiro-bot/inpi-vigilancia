@@ -39,12 +39,16 @@ def generar_avisos_vencimiento(supabase_get, supabase_insert):
         f"select=id,nombre,fecha_vencimiento&fecha_vencimiento=lte.{limite.isoformat()}"
         f"&fecha_vencimiento=not.is.null",
     )
+    # Dedup por (marca, fecha) y no solo por marca: si el usuario actualiza
+    # el vencimiento (ej. renovación), la fecha nueva es un caso distinto y
+    # amerita un aviso propio, aunque esa marca ya haya sido avisada antes.
     ya_avisadas = {
-        a["marca_vigilada_id"] for a in supabase_get("avisos_vencimiento", "select=marca_vigilada_id")
+        (a["marca_vigilada_id"], a["fecha_vencimiento"])
+        for a in supabase_get("avisos_vencimiento", "select=marca_vigilada_id,fecha_vencimiento")
     }
     nuevos = []
     for m in marcas:
-        if m["id"] in ya_avisadas:
+        if (m["id"], m["fecha_vencimiento"]) in ya_avisadas:
             continue
         venc = date.fromisoformat(m["fecha_vencimiento"])
         dias = (venc - hoy).days
