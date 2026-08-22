@@ -56,8 +56,7 @@ def main():
 
             alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
             rows = [{
-                "marca_vigilada_id": next((m["id"] for m in cartera if m["nombre"] == al["marca_vigilada"]
-                                            and m["clase"] == al["clase"]), None),
+                "marca_vigilada_id": al["marca_vigilada_id"],
                 "tipo_match": al["tipo_match"], "acta_nueva": al["acta_nueva"],
                 "denominacion_nueva": al["denominacion_nueva"], "clase": al["clase"],
                 "titular_nuevo": al["titular_nuevo"], "boletin_numero": numero,
@@ -65,7 +64,7 @@ def main():
                 "similitud_fonetica": al["similitud"]["fonetica"],
                 "similitud_logo": al["similitud"]["score"] if al["tipo_match"] == "logo" else None,
                 "similitud_score": al["similitud"]["score"],
-                "requiere_atencion": al["requiere_atencion"],
+                "requiere_oposicion": al["requiere_atencion"],
                 "borrador_oposicion": al["borrador_oposicion"],
             } for al in alertas]
             supabase_insert("alertas", rows)
