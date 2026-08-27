@@ -48,9 +48,8 @@ def reportar_a_supabase(mensaje: str):
 
 def run():
     import re
-    import json
     import subprocess
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from parse_boletin import parse_boletin
     from matcher import buscar_coincidencias
@@ -74,12 +73,13 @@ def run():
     def supabase_upsert(tabla, rows, on_conflict):
         if not rows:
             return
-        headers = {**HEADERS, "Prefer": "resolution=merge-duplicates"}
+        headers = {**HEADERS, "Prefer": "resolution=merge-duplicates,return=representation"}
         r = requests.post(
             f"{SUPABASE_URL}/rest/v1/{tabla}?on_conflict={on_conflict}",
             headers=headers, json=rows, timeout=60,
         )
         r.raise_for_status()
+        return r.json()
 
     def supabase_insert(tabla, rows):
         if not rows:
@@ -91,10 +91,23 @@ def run():
         r = requests.patch(f"{SUPABASE_URL}/rest/v1/{tabla}?id=eq.{id_}", headers=HEADERS, json=campos, timeout=30)
         r.raise_for_status()
 
+    def supabase_patch_boletin(numero, campos):
+        r = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/boletines_procesados?numero_boletin=eq.{numero}",
+            headers={**HEADERS, "Prefer": "return=representation"}, json=campos, timeout=30,
+        )
+        r.raise_for_status()
+        if not r.json():
+            raise RuntimeError(f"No se pudo actualizar el estado del boletín {numero}")
+
     # Mantenimiento de cartera: procesa logos subidos desde el dashboard y
     # genera avisos de vencimiento — se hace en cada corrida, haya o no boletines nuevos.
-    procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert)
-    avisos_venc = generar_avisos_vencimiento(supabase_get, supabase_insert)
+    procesar_logos_pendientes(
+        supabase_get, supabase_patch, supabase_insert,
+    )
+    avisos_venc = generar_avisos_vencimiento(
+        supabase_get, supabase_insert,
+    )
 
     def listar_boletines_marcas_nuevas():
         r = requests.get(INPI_LISTADO, timeout=30)
@@ -110,7 +123,9 @@ def run():
                 for n, f, u in filas]
 
     ya_procesados = {
-        b["numero_boletin"] for b in supabase_get("boletines_procesados", "select=numero_boletin")
+        b["numero_boletin"] for b in supabase_get(
+            "boletines_procesados", "select=numero_boletin&estado=eq.completo"
+        )
     }
 
     boletines = listar_boletines_marcas_nuevas()
@@ -118,7 +133,7 @@ def run():
 
     nuevos = [b for b in boletines if b["numero"] not in ya_procesados]
     nuevos = sorted(nuevos, key=lambda b: b["numero"])
-    reportar_a_supabase(f"Pendientes de procesar: {len(nuevos)} boletines")
+    reportar_a_supabase(f"Pendientes o reintentables: {len(nuevos)} boletines")
 
     if not nuevos:
         enviar_resumen([], avisos_venc)
@@ -144,6 +159,17 @@ def run():
             break
 
         try:
+            fecha_publicacion = datetime.strptime(b["fecha"], "%d/%m/%Y").date()
+            # Queda pendiente hasta que las alertas se hayan persistido correctamente.
+            supabase_upsert("boletines_procesados", [{
+                "numero_boletin": b["numero"],
+                "fecha_boletin": fecha_publicacion.isoformat(),
+                "tipo": "MARCAS NUEVAS",
+                "actas_encontradas": 0,
+                "estado": "pendiente",
+                "ultimo_error": None,
+            }], "numero_boletin")
+
             pdf_bytes = requests.get(b["url"], timeout=60)
             pdf_bytes.raise_for_status()
             pdf_path = f"/tmp/{b['numero']}.pdf"
@@ -162,34 +188,53 @@ def run():
 
             alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
 
-            rows = [{
-                "marca_vigilada_id": al["marca_vigilada_id"],
-                "tipo_match": al["tipo_match"],
-                "acta_nueva": al["acta_nueva"],
-                "denominacion_nueva": al["denominacion_nueva"],
-                "clase": al["clase"],
-                "titular_nuevo": al["titular_nuevo"],
-                "boletin_numero": b["numero"],
-                "similitud_ortografica": al["similitud"]["ortografica"],
-                "similitud_fonetica": al["similitud"]["fonetica"],
-                "similitud_logo": al["similitud"]["score"] if al["tipo_match"] == "logo" else None,
-                "similitud_score": al["similitud"]["score"],
-                "requiere_oposicion": al["requiere_atencion"],
-                "borrador_oposicion": al["borrador_oposicion"],
-            } for al in alertas]
+            fecha_limite = fecha_publicacion + timedelta(days=30)
+            rows = []
+            for al in alertas:
+                score = al["similitud"]["score"]
+                rows.append({
+                    "marca_vigilada_id": al["marca_vigilada_id"],
+                    "tipo_match": al["tipo_match"],
+                    "acta_nueva": al["acta_nueva"],
+                    "denominacion_nueva": al["denominacion_nueva"],
+                    "clase": al["clase"],
+                    "titular_nuevo": al["titular_nuevo"],
+                    "boletin_numero": b["numero"],
+                    "similitud_ortografica": al["similitud"]["ortografica"],
+                    "similitud_fonetica": al["similitud"]["fonetica"],
+                    "similitud_logo": score if al["tipo_match"] == "logo" else None,
+                    "similitud_score": score,
+                    "requiere_oposicion": al["requiere_atencion"],
+                    "borrador_oposicion": al["borrador_oposicion"],
+                    "fecha_publicacion": fecha_publicacion.isoformat(),
+                    "fecha_limite_oposicion": fecha_limite.isoformat(),
+                    "enlace_inpi": f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={al['acta_nueva']}",
+                    "nivel_riesgo": "alto" if score >= 0.85 else "medio" if score >= 0.72 else "bajo",
+                    "evidencia": [{
+                        "metodo": al["tipo_match"], "score": score,
+                        "ortografica": al["similitud"]["ortografica"],
+                        "fonetica": al["similitud"]["fonetica"],
+                    }],
+                })
 
-            supabase_insert("boletines_procesados", [{
-                "numero_boletin": b["numero"],
-                "fecha_boletin": datetime.strptime(b["fecha"], "%d/%m/%Y").date().isoformat(),
-                "tipo": "MARCAS NUEVAS",
-                "actas_encontradas": len(actas),
-            }])
-            supabase_insert("alertas", rows)
+            # Upsert por clave de origen: seguro ante reintentos del mismo boletín.
+            supabase_upsert("alertas", rows, "marca_vigilada_id,acta_nueva,boletin_numero")
+            supabase_patch_boletin(b["numero"], {
+                "actas_encontradas": len(actas), "estado": "completo",
+                "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+            })
             reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
             procesados_esta_corrida += 1
             todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
         except Exception as e:
-            reportar_a_supabase(f"boletin {b['numero']} FALLO, sigo con el resto: {e}")
+            try:
+                supabase_patch_boletin(b["numero"], {
+                    "estado": "fallido", "ultimo_error": str(e)[:3500],
+                    "actualizado_at": datetime.utcnow().isoformat() + "Z",
+                })
+            except Exception:
+                pass
+            reportar_a_supabase(f"boletin {b['numero']} FALLO, se reintentará: {e}")
             continue
 
     enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
