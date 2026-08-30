@@ -50,7 +50,7 @@ def fecha_iso(fecha_ddmmaaaa):
 
 
 def main():
-    procesados = supabase_get("boletines_procesados", "select=numero_boletin,fecha_boletin&tipo=eq.MARCAS NUEVAS&order=numero_boletin.asc")
+    procesados = supabase_get("boletines_procesados", "select=numero_boletin,fecha_boletin&tipo=eq.MARCAS%20NUEVAS&order=numero_boletin.asc")
     ya_en_historico = {a["boletin_numero"] for a in supabase_get("actas_historicas", "select=boletin_numero") if a.get("boletin_numero")}
 
     pendientes = [p for p in procesados if p["numero_boletin"] not in ya_en_historico]
