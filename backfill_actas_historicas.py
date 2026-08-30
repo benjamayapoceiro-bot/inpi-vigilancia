@@ -62,7 +62,9 @@ def fecha_iso(fecha_ddmmaaaa):
         return None
     try:
         d, m, a = fecha_ddmmaaaa.split("/")
-        return f"{a}-{m}-{d}"
+        if not d or not m or not a:
+            return None
+        return f"{a}-{m.zfill(2)}-{d.zfill(2)}"
     except ValueError:
         return None
 
