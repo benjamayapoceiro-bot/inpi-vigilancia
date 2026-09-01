@@ -216,9 +216,31 @@ def run():
                         "fonetica": al["similitud"]["fonetica"],
                     }],
                 })
+                
+                if al["requiere_atencion"]:
+                    titulo_plazo = f"Oposición a acta {al['acta_nueva']} ({al['denominacion_nueva'] or 'logo'})"
+                    if not any(p["titulo"] == titulo_plazo for p in plazos_rows):
+                        plazos_rows.append({
+                            "marca_vigilada_id": al["marca_vigilada_id"],
+                            "tipo": "oposicion",
+                            "titulo": titulo_plazo,
+                            "fecha_origen": fecha_publicacion.isoformat(),
+                            "fecha_vencimiento": fecha_limite.isoformat(),
+                            "estado": "pendiente",
+                            "fuente": "automatica"
+                        })
 
             # Upsert por clave de origen: seguro ante reintentos del mismo boletín.
             supabase_upsert("alertas", rows, "marca_vigilada_id,acta_nueva,boletin_numero")
+            
+            if plazos_rows:
+                # Evitar duplicados ante reintentos consultando los plazos ya creados en esta fecha
+                existentes = supabase_get("plazos_legales", f"select=titulo&fuente=eq.automatica&fecha_origen=eq.{fecha_publicacion.isoformat()}")
+                titulos_existentes = {p["titulo"] for p in existentes}
+                plazos_a_insertar = [p for p in plazos_rows if p["titulo"] not in titulos_existentes]
+                if plazos_a_insertar:
+                    supabase_insert("plazos_legales", plazos_a_insertar)
+                    
             supabase_patch_boletin(b["numero"], {
                 "actas_encontradas": len(actas), "estado": "completo",
                 "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
