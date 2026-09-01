@@ -206,7 +206,14 @@ def run():
                     acta["logo_phash"] = logos[acta["acta"]]["phash"]
                     acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
 
-            alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
+            try:
+                historico_rows = [{"acta": a["acta"], "clase": a["clase"], "tipo": a["tipo"], "denominacion": a["denominacion"] or None, "titulares": a["titulares"], "boletin_numero": b["numero"], "fecha_publicacion": fecha_publicacion.isoformat()} for a in actas if a.get("acta")]
+                if historico_rows:
+                    supabase_upsert("actas_historicas", historico_rows, "acta")
+            except Exception as e:
+                reportar_a_supabase(f"boletin {b['numero']} WARN actas_historicas upsert falló: {e}")
+
+            alertas = buscar_coincidencias(cartera, actas, umbral=0.60, umbral_logo=0.75)
 
             fecha_limite = fecha_publicacion + timedelta(days=30)
             rows = []
@@ -219,22 +226,26 @@ def run():
                     "acta_nueva": al["acta_nueva"],
                     "denominacion_nueva": al["denominacion_nueva"],
                     "clase": al["clase"],
+                    "clase_acta": al.get("clase_acta", al["clase"]),
+                    "relacion_clases": al.get("relacion_clases", "misma"),
                     "titular_nuevo": al["titular_nuevo"],
                     "boletin_numero": b["numero"],
                     "similitud_ortografica": al["similitud"]["ortografica"],
                     "similitud_fonetica": al["similitud"]["fonetica"],
                     "similitud_logo": score if al["tipo_match"] == "logo" else None,
                     "similitud_score": score,
-                    "requiere_oposicion": al["requiere_atencion"],
+                    "score_ajustado": al.get("score_ajustado", score),
+                    "requiere_oposicion": al.get("requiere_oposicion", al["requiere_atencion"]),
                     "borrador_oposicion": al["borrador_oposicion"],
                     "fecha_publicacion": fecha_publicacion.isoformat(),
                     "fecha_limite_oposicion": fecha_limite.isoformat(),
                     "enlace_inpi": f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={al['acta_nueva']}",
-                    "nivel_riesgo": "alto" if score >= 0.85 else "medio" if score >= 0.72 else "bajo",
+                    "nivel_riesgo": al.get("nivel_riesgo", "alto" if score >= 0.85 else "medio" if score >= 0.72 else "bajo"),
                     "evidencia": [{
-                        "metodo": al["tipo_match"], "score": score,
+                        "metodo": al["tipo_match"], "score": score, "score_ajustado": al.get("score_ajustado", score),
                         "ortografica": al["similitud"]["ortografica"],
                         "fonetica": al["similitud"]["fonetica"],
+                        "relacion_clases": al.get("relacion_clases", "misma"),
                     }],
                 })
                 

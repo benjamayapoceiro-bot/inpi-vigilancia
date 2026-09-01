@@ -73,12 +73,6 @@ def distancia_hash(hash_a: str, hash_b: str) -> float:
 
 
 def distancia_logo_combinada(vig: dict, acta: dict) -> float:
-    """Combina pHash (estructura de frecuencias, robusto a color/recortes) y
-    dHash (gradientes de brillo, robusto a variaciones de contraste). Usar los
-    dos algoritmos en simultáneo baja bastante los falsos positivos que da
-    cualquiera de los dos por separado. Si a algún logo le falta uno de los
-    dos hashes (ej. logos cargados antes de sumar dHash), cae a comparar
-    solo con el que esté disponible."""
     scores = []
     if vig.get("logo_phash") and acta.get("logo_phash"):
         scores.append(distancia_hash(vig["logo_phash"], acta["logo_phash"]))
@@ -86,10 +80,61 @@ def distancia_logo_combinada(vig: dict, acta: dict) -> float:
         scores.append(distancia_hash(vig["logo_dhash"], acta["logo_dhash"]))
     if not scores:
         return 0.0
-    return round(sum(scores) / len(scores), 3)
+    if len(scores) == 2:
+        ph, dh = scores[0], scores[1]
+        if min(ph, dh) < 0.70:
+            return round(min(ph, dh) * 0.92, 3)
+        return round(ph * 0.55 + dh * 0.45, 3)
+    return round(scores[0], 3)
 
 
-UMBRAL_ATENCION = 0.85  # a partir de acá, generamos borrador de oposición
+UMBRAL_ATENCION = 0.85
+UMBRAL_TEXTO = 0.60
+UMBRAL_LOGO = 0.75
+
+CLASES_AFINES = {
+    9: [35, 38, 41, 42], 35: [9, 38, 41, 42], 42: [9, 35, 38, 41],
+    25: [18, 26, 35], 18: [25, 26], 3: [5, 21, 44], 5: [3, 44],
+    29: [30, 31, 32, 33, 43], 30: [29, 31, 32, 33, 43],
+    36: [35, 37, 45], 37: [36, 45], 11: [7, 37], 7: [11, 37],
+}
+
+
+def relacion_clases(c1: int, c2: int) -> str:
+    if c1 == c2:
+        return "misma"
+    if c2 in CLASES_AFINES.get(c1, []) or c1 in CLASES_AFINES.get(c2, []):
+        return "afin"
+    return "distinta"
+
+
+def calcular_riesgo(score: float, relacion: str, tipo_match: str) -> dict:
+    factor = {"misma": 1.0, "afin": 0.82, "distinta": 0.62}[relacion]
+    score_ajustado = round(score * (0.72 + 0.28 * factor), 3)
+    if relacion == "misma":
+        if score >= 0.85:
+            nivel = "alto"
+        elif score >= 0.65:
+            nivel = "medio"
+        elif score >= 0.60:
+            nivel = "bajo"
+        else:
+            nivel = "bajo"
+    elif relacion == "afin":
+        if score >= 0.88:
+            nivel = "alto"
+        elif score >= 0.72:
+            nivel = "medio"
+        else:
+            nivel = "bajo"
+    else:
+        if score >= 0.92:
+            nivel = "medio"
+        elif score >= 0.72:
+            nivel = "bajo"
+        else:
+            nivel = "bajo"
+    return {"nivel": nivel, "score_ajustado": score_ajustado, "factor_clase": factor, "relacion": relacion}
 
 
 def generar_borrador_oposicion(alerta: dict) -> str:
@@ -118,55 +163,68 @@ def generar_borrador_oposicion(alerta: dict) -> str:
     )
 
 
-def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.72, umbral_logo=0.80):
-    """
-    marcas_vigiladas: [{"nombre": "TORTE", "clase": 30, "cliente": "...",
-                         "tipo": "D"|"M", "logo_phash": "..." (si tipo M)}, ...]
-    actas_nuevas: output de parse_boletin.py, con logo_phash agregado por
-                  extract_logos.py para las actas tipo M.
-    """
+def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.60, umbral_logo=0.75):
     alertas = []
     for vig in marcas_vigiladas:
         for acta in actas_nuevas:
-            if acta["clase"] != vig["clase"]:
+            if not acta.get("acta"):
                 continue
+            relacion = relacion_clases(vig["clase"], acta["clase"])
+            umbral_efectivo = umbral if relacion == "misma" else (0.68 if relacion == "afin" else 0.72)
+            umbral_logo_ef = umbral_logo if relacion == "misma" else (0.78 if relacion == "afin" else 0.82)
 
-            # --- Marca denominativa: comparación de texto ---
             if vig.get("tipo", "D") == "D" and acta["denominacion"]:
+                if not vig.get("nombre"):
+                    continue
                 sim = similitud(vig["nombre"], acta["denominacion"])
-                if sim["score"] >= umbral:
+                if sim["score"] >= umbral_efectivo:
+                    riesgo = calcular_riesgo(sim["score"], relacion, "texto")
                     alertas.append({
                         "tipo_match": "texto",
                         "marca_vigilada_id": vig.get("id"),
                         "marca_vigilada": vig["nombre"], "cliente": vig.get("cliente", ""),
-                        "clase": vig["clase"], "acta_nueva": acta["acta"],
+                        "clase": vig["clase"], "clase_acta": acta["clase"],
+                        "relacion_clases": relacion,
+                        "acta_nueva": acta["acta"],
                         "denominacion_nueva": acta["denominacion"],
                         "titular_nuevo": acta["titulares"], "similitud": sim,
+                        "nivel_riesgo": riesgo["nivel"], "score_ajustado": riesgo["score_ajustado"],
                     })
-
-            # --- Marca mixta: comparación de logo por hash combinado (pHash + dHash) ---
             elif vig.get("tipo") == "M" and (vig.get("logo_phash") or vig.get("logo_dhash")):
                 score_logo = distancia_logo_combinada(vig, acta)
-                if score_logo >= umbral_logo:
+                if score_logo >= umbral_logo_ef:
+                    riesgo = calcular_riesgo(score_logo, relacion, "logo")
                     alertas.append({
                         "tipo_match": "logo",
                         "marca_vigilada_id": vig.get("id"),
                         "marca_vigilada": vig["nombre"] or "(logo sin texto)",
                         "cliente": vig.get("cliente", ""),
-                        "clase": vig["clase"], "acta_nueva": acta["acta"],
+                        "clase": vig["clase"], "clase_acta": acta["clase"],
+                        "relacion_clases": relacion,
+                        "acta_nueva": acta["acta"],
                         "denominacion_nueva": acta["denominacion"],
                         "titular_nuevo": acta["titulares"],
                         "similitud": {"ortografica": 0, "fonetica": 0, "score": score_logo},
+                        "nivel_riesgo": riesgo["nivel"], "score_ajustado": riesgo["score_ajustado"],
                     })
 
-    alertas.sort(key=lambda x: -x["similitud"]["score"])
+    alertas.sort(key=lambda x: (-{"alto": 3, "medio": 2, "bajo": 1}[x.get("nivel_riesgo", "bajo")], -x["similitud"]["score"], x["relacion_clases"] != "misma"))
 
     for al in alertas:
-        if al["similitud"]["score"] >= UMBRAL_ATENCION:
+        misma = al.get("relacion_clases") == "misma"
+        score = al["similitud"]["score"]
+        necesita = (misma and score >= 0.85) or (al.get("relacion_clases") == "afin" and score >= 0.88) or (not misma and score >= 0.92)
+        if necesita:
             al["requiere_atencion"] = True
+            al["requiere_oposicion"] = True
             al["borrador_oposicion"] = generar_borrador_oposicion(al)
+        elif al.get("nivel_riesgo") in ("alto", "medio"):
+            al["requiere_atencion"] = True
+            al["requiere_oposicion"] = score >= UMBRAL_ATENCION and misma
+            al["borrador_oposicion"] = generar_borrador_oposicion(al) if al["requiere_oposicion"] else None
         else:
             al["requiere_atencion"] = False
+            al["requiere_oposicion"] = False
             al["borrador_oposicion"] = None
 
     return alertas
