@@ -56,6 +56,7 @@ def run():
     from extract_logos import extraer_logos
     from mantenimiento_cartera import procesar_logos_pendientes, generar_avisos_vencimiento
     from notificar_email import enviar_resumen
+    from consultar_notificaciones_inpi import consultar_oposiciones_nuevas
 
     INPI_LISTADO = "https://portaltramites.inpi.gob.ar/Boletines?Tipo_Item=3"
 
@@ -135,17 +136,36 @@ def run():
     nuevos = sorted(nuevos, key=lambda b: b["numero"])
     reportar_a_supabase(f"Pendientes o reintentables: {len(nuevos)} boletines")
 
-    if not nuevos:
-        enviar_resumen([], avisos_venc)
-        reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
-        return
-
-    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash")
+    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,numero_acta")
     cartera = [{"id": m["id"], "nombre": m["nombre"], "clase": m["clase"],
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
-                "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash")} for m in cartera]
+                "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash"),
+                "numero_acta": m.get("numero_acta")} for m in cartera]
 
     todas_las_alertas_fuertes = []
+    
+    # ── CHECK OPOSICIONES RECIBIDAS (API SOAP) ──
+    oposiciones = consultar_oposiciones_nuevas(cartera, dias_atras=7)
+    if oposiciones:
+        # Se insertan en la base con un boletin_numero ficticio (0) para las oposiciones
+        for op in oposiciones:
+            op["boletin_numero"] = 0
+            op["fecha_publicacion"] = datetime.utcnow().date().isoformat()
+            op["nivel_riesgo"] = "alto"
+            op["similitud_score"] = 1.0
+            
+        try:
+            # Usar acta_nueva como clave única secundaria
+            supabase_upsert("alertas", oposiciones, "marca_vigilada_id,acta_nueva,boletin_numero")
+            todas_las_alertas_fuertes.extend(oposiciones)
+            reportar_a_supabase(f"Oposiciones recibidas y guardadas: {len(oposiciones)}")
+        except Exception as e:
+            reportar_a_supabase(f"Error guardando oposiciones: {e}")
+
+    if not nuevos:
+        enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
+        reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
+        return
     inicio = time.time()
     PRESUPUESTO_SEGUNDOS = 12 * 60  # deja margen dentro del límite de GitHub Actions
     procesados_esta_corrida = 0
@@ -190,6 +210,7 @@ def run():
 
             fecha_limite = fecha_publicacion + timedelta(days=30)
             rows = []
+            plazos_rows = []
             for al in alertas:
                 score = al["similitud"]["score"]
                 rows.append({

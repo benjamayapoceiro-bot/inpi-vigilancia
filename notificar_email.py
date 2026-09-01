@@ -24,12 +24,21 @@ def enviar_resumen(alertas_fuertes: list, avisos_vencimiento: list, destinatario
 
     partes = []
     if alertas_fuertes:
-        partes.append(f"⚠ {len(alertas_fuertes)} marca(s) nueva(s) muy parecidas a tu cartera:\n")
-        for a in alertas_fuertes:
-            partes.append(
-                f"  - Acta {a['acta_nueva']}: \"{a.get('denominacion_nueva') or '(logo)'}\" "
-                f"(clase {a['clase']}, {round(a['similitud']['score']*100)}% similitud)"
-            )
+        oposiciones = [a for a in alertas_fuertes if a.get("tipo_match") == "oposicion_recibida"]
+        similares = [a for a in alertas_fuertes if a.get("tipo_match") != "oposicion_recibida"]
+        
+        if oposiciones:
+            partes.append(f"🚨 {len(oposiciones)} OPOSICIÓN(ES) RECIBIDA(S):\n")
+            for a in oposiciones:
+                partes.append(f"  - {a.get('denominacion_nueva', '(desconocida)')} (Acta nuestra afectada: {a.get('acta_nueva')})")
+                
+        if similares:
+            partes.append(f"\n⚠ {len(similares)} marca(s) nueva(s) muy parecidas a tu cartera:\n")
+            for a in similares:
+                partes.append(
+                    f"  - Acta {a['acta_nueva']}: \"{a.get('denominacion_nueva') or '(logo)'}\" "
+                    f"(clase {a['clase']}, {round(a.get('similitud', {}).get('score', 0)*100)}% similitud)"
+                )
     if avisos_vencimiento:
         partes.append(f"\n📅 {len(avisos_vencimiento)} marca(s) por vencer en menos de 90 días:\n")
         for v in avisos_vencimiento:
