@@ -190,7 +190,7 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.60, umbral_log
                         "titular_nuevo": acta["titulares"], "similitud": sim,
                         "nivel_riesgo": riesgo["nivel"], "score_ajustado": riesgo["score_ajustado"],
                     })
-            elif vig.get("tipo") == "M" and (vig.get("logo_phash") or vig.get("logo_dhash")):
+            elif vig.get("tipo") in ("M", "F") and (vig.get("logo_phash") or vig.get("logo_dhash")):
                 score_logo = distancia_logo_combinada(vig, acta)
                 if score_logo >= umbral_logo_ef:
                     riesgo = calcular_riesgo(score_logo, relacion, "logo")
