@@ -1,3 +1,14 @@
 warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+/home/runner/work/inpi-vigilancia/inpi-vigilancia/cron_check_boletines.py:278: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+/home/runner/work/inpi-vigilancia/inpi-vigilancia/cron_check_boletines.py:278: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+/home/runner/work/inpi-vigilancia/inpi-vigilancia/cron_check_boletines.py:278: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+/home/runner/work/inpi-vigilancia/inpi-vigilancia/cron_check_boletines.py:278: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+/home/runner/work/inpi-vigilancia/inpi-vigilancia/cron_check_boletines.py:278: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+Faltan INPI_CUIT o INPI_CLAVE, omitiendo consulta de notificaciones de oposición.
 --- curl directo a Supabase ---
 HTTP_STATUS:201
