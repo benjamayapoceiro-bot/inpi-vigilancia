@@ -25,13 +25,21 @@ def enviar_resumen(alertas_fuertes: list, avisos_vencimiento: list, destinatario
     partes = []
     if alertas_fuertes:
         oposiciones = [a for a in alertas_fuertes if a.get("tipo_match") == "oposicion_recibida"]
-        similares = [a for a in alertas_fuertes if a.get("tipo_match") != "oposicion_recibida"]
-        
+        resoluciones = [a for a in alertas_fuertes if a.get("tipo_match") == "resolucion"]
+        similares = [a for a in alertas_fuertes if a.get("tipo_match") not in ("oposicion_recibida","resolucion")]
+
+        if resoluciones:
+            partes.append(f"✅ {len(resoluciones)} RESOLUCIÓN(ES) — el INPI no avisa, nosotros sí:\n")
+            for a in resoluciones:
+                ev = (a.get("evidencia") or [{}])[0]
+                partes.append(f"  - {a.get('marca_vigilada') or a.get('denominacion_nueva') or '(marca)'} (Acta {a.get('acta_nueva')}) {ev.get('estado_viejo','?')} → {ev.get('estado_nuevo','?')}"
+                              f" — {a.get('enlace_inpi','')}")
+
         if oposiciones:
-            partes.append(f"🚨 {len(oposiciones)} OPOSICIÓN(ES) RECIBIDA(S):\n")
+            partes.append(f"\n🚨 {len(oposiciones)} OPOSICIÓN(ES) RECIBIDA(S):\n")
             for a in oposiciones:
                 partes.append(f"  - {a.get('denominacion_nueva', '(desconocida)')} (Acta nuestra afectada: {a.get('acta_nueva')})")
-                
+
         if similares:
             partes.append(f"\n⚠ {len(similares)} marca(s) nueva(s) muy parecidas a tu cartera:\n")
             for a in similares:

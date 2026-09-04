@@ -144,6 +144,67 @@ def run():
 
     todas_las_alertas_fuertes = []
     
+    # ── CHECK RESOLUCIONES (cambios de estado) — el INPI no avisa cuando te conceden
+    resoluciones = []
+    for m in cartera:
+        if not m.get("numero_acta"):
+            continue
+        try:
+            # Grilla puntual con acta trae Estado, Fecha_Vencimiento, etc.
+            gr = requests.post("https://portaltramites.inpi.gob.ar/MarcasConsultas/GrillaMarcasPuntual",
+                               data={"search":"","sort":"","order":"asc","offset":0,"limit":10,"acta":m["numero_acta"]},
+                               timeout=20)
+            gr.raise_for_status()
+            j = gr.json()
+            row = (j.get("rows") or [None])[0]
+            if not row:
+                continue
+            estado_nuevo = (row.get("Estado") or "").strip()
+            # Normalizar
+            mapa = {"C":"Concedida","R":"Registrada","T":"En trámite","D":"Denegada","V":"Vencida","A":"Abandonada","O":"En oposición","P":"Publicada","S":"Solicitada"}
+            estado_norm = mapa.get(estado_nuevo, estado_nuevo) or None
+            estado_viejo = (m.get("estado") or "").strip()
+            if estado_norm and estado_norm != estado_viejo:
+                # Actualizar cartera
+                try:
+                    supabase_patch("marcas_vigiladas", m["id"], {"estado": estado_norm})
+                except Exception as e:
+                    reportar_a_supabase(f"No se pudo actualizar estado de {m['id']} {m.get('nombre')}: {e}")
+                # Generar alerta de resolución
+                resoluciones.append({
+                    "marca_vigilada_id": m["id"],
+                    "tipo_match": "resolucion",
+                    "acta_nueva": m["numero_acta"],
+                    "denominacion_nueva": row.get("Denominacion") or m.get("nombre"),
+                    "clase": m["clase"],
+                    "clase_acta": m["clase"],
+                    "relacion_clases": "misma",
+                    "titular_nuevo": row.get("Titulares") or "",
+                    "boletin_numero": 0,
+                    "similitud_ortografica": 1.0,
+                    "similitud_fonetica": 1.0,
+                    "similitud_score": 1.0,
+                    "score_ajustado": 1.0,
+                    "nivel_riesgo": "alto",
+                    "requiere_oposicion": False,
+                    "borrador_oposicion": None,
+                    "fecha_publicacion": datetime.utcnow().date().isoformat(),
+                    "fecha_limite_oposicion": None,
+                    "enlace_inpi": f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={m['numero_acta']}",
+                    "evidencia": [{"metodo":"resolucion","estado_nuevo":estado_norm,"estado_viejo":estado_viejo}],
+                })
+                reportar_a_supabase(f"Resolución detectada: {m.get('nombre')} ({m['numero_acta']}) {estado_viejo} → {estado_norm}")
+        except Exception as e:
+            reportar_a_supabase(f"Error chequeando resolución de {m.get('id')}: {e}")
+            continue
+    if resoluciones:
+        try:
+            supabase_upsert("alertas", resoluciones, "marca_vigilada_id,acta_nueva,boletin_numero")
+            todas_las_alertas_fuertes.extend(resoluciones)
+            reportar_a_supabase(f"Resoluciones guardadas: {len(resoluciones)}")
+        except Exception as e:
+            reportar_a_supabase(f"Error guardando resoluciones: {e}")
+
     # ── CHECK OPOSICIONES RECIBIDAS (API SOAP) ──
     oposiciones = consultar_oposiciones_nuevas(cartera, dias_atras=7)
     if oposiciones:
