@@ -14,7 +14,7 @@ import imagehash
 from PIL import Image
 
 
-def procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert):
+def procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert, supabase_storage_upload=None):
     marcas = supabase_get(
         "marcas_vigiladas", "select=id,logo_pendiente&logo_pendiente=not.is.null"
     )
@@ -24,9 +24,16 @@ def procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert):
             im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             phash = str(imagehash.phash(im))
             dhash = str(imagehash.dhash(im))
-            supabase_patch("marcas_vigiladas", m["id"], {
-                "logo_phash": phash, "logo_dhash": dhash, "logo_pendiente": None,
-            })
+            logo_url = None
+            if supabase_storage_upload:
+                try:
+                    logo_url = supabase_storage_upload(f"logos/{m['id']}.png", img_bytes, "image/png")
+                except Exception as e:
+                    print(f"no se pudo subir logo de {m['id']}: {e}")
+            patch_data = {"logo_phash": phash, "logo_dhash": dhash, "logo_pendiente": None}
+            if logo_url:
+                patch_data["logo_url"] = logo_url
+            supabase_patch("marcas_vigiladas", m["id"], patch_data)
         except Exception as e:
             print(f"no se pudo procesar logo de {m['id']}: {e}")
 
