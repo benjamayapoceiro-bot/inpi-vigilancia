@@ -12,9 +12,18 @@ serve(async (req) => {
     if (!user) throw new Error("No autenticado");
     const { data: perfil } = await supabaseAdmin.from("perfiles").select("rol").eq("id", user.id).single();
     if (!perfil || perfil.rol !== "admin") throw new Error("Solo admin puede crear usuarios");
-    const { email, password, estudio_id, limite_marcas } = await req.json();
-    if (!email || !password || !estudio_id) throw new Error("email, password y estudio_id requeridos");
-    const { data: newUser, error: errCreate } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true });
+    let { email, username, password, estudio_id, limite_marcas, isDemo } = await req.json();
+    // Permitir demo con solo username (sin email real) — genera email fake @demo.fons.legal
+    if (!email && username) {
+      const clean = String(username).toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 30) || 'demo';
+      email = `${clean}@demo.fons.legal`;
+      isDemo = true;
+    }
+    // Permitir email de mentira tipo demo@demo.test — normalizar y validar formato
+    if (email && !email.includes('@')) throw new Error("email inválido (debe tener @) o usá username para demo");
+    if (!email || !password || !estudio_id) throw new Error("email/username, password y estudio_id requeridos");
+    // Si es demo, asegura que el email demo no choque con validación de Supabase
+    const { data: newUser, error: errCreate } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { isDemo: !!isDemo, username: username || null } });
     if (errCreate) throw errCreate;
     const { error: errPerfil } = await supabaseAdmin.from("perfiles").insert({ id: newUser.user.id, email, rol: "estudio", estudio_id, limite_marcas_override: limite_marcas || null });
     if (errPerfil) throw errPerfil;
