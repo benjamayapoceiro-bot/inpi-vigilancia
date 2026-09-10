@@ -8,7 +8,7 @@ serve(async (req) => {
     if (!email || !password || !estudio_nombre) throw new Error("email, password y estudio_nombre requeridos");
     if (!email.includes('@') || password.length < 6) throw new Error("email inválido o clave muy corta (mín 6)");
     const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    // Crear estudio demo con límite 1, sin INPI/presentar para que no abuse
+    // Crear estudio demo con límite 1, sin INPI/presentar para que no abuse, notificado=false para badge
     const { data: estudio, error: errEst } = await supabaseAdmin.from("estudios").insert({
       nombre: estudio_nombre.slice(0,60),
       email_contacto: email,
@@ -16,13 +16,30 @@ serve(async (req) => {
       plan: "demo",
       puede_conectar_inpi: false,
       puede_presentar: false,
-      puede_ver_alertas: true
+      puede_ver_alertas: true,
+      notificado: false
     }).select("id").single();
     if (errEst) throw errEst;
     const { data: newUser, error: errCreate } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true });
     if (errCreate) throw errCreate;
     const { error: errPerfil } = await supabaseAdmin.from("perfiles").insert({ id: newUser.user.id, email, rol: "estudio", estudio_id: estudio.id });
     if (errPerfil) throw errPerfil;
+    // Mail best-effort al admin vía Resend (no rompe el signup si falla)
+    try {
+      const resendKey = Deno.env.get("RESEND_API_KEY");
+      if (resendKey) {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "Vigilancia INPI <onboarding@resend.dev>",
+            to: "benjamayapoceiro@gmail.com",
+            subject: `Nuevo demo: ${estudio_nombre}`,
+            text: `Se registró un estudio demo nuevo.\n\nEstudio: ${estudio_nombre}\nEmail: ${email}\nFecha: ${new Date().toISOString()}\n\nVer en el panel Admin: https://benjamayapoceiro-bot.github.io/inpi-vigilancia-dashboard/#admin`,
+          }),
+        });
+      }
+    } catch (e) { console.error("Resend fail (no bloqueante)", e); }
     return new Response(JSON.stringify({ ok: true, estudio_id: estudio.id, user_id: newUser.user.id }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e.message || e) }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
