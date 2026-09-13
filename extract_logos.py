@@ -10,7 +10,7 @@ AMBOS coincidan por encima del umbral para considerar "muy parecido".
 
 Devuelve {numero_acta: {"phash": ..., "dhash": ...}}.
 """
-import fitz
+import pymupdf as fitz
 import imagehash
 from PIL import Image
 import io

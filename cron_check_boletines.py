@@ -46,10 +46,15 @@ def reportar_a_supabase(mensaje: str):
         print("no se pudo reportar a debug_logs:", e)
 
 
+def _ahora_utc():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc)
+
+
 def run():
     import re
     import subprocess
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     from parse_boletin import parse_boletin
     from matcher import buscar_coincidencias
@@ -188,7 +193,7 @@ def run():
                     "nivel_riesgo": "alto",
                     "requiere_oposicion": False,
                     "borrador_oposicion": None,
-                    "fecha_publicacion": datetime.utcnow().date().isoformat(),
+                    "fecha_publicacion": datetime.now(timezone.utc).date().isoformat(),
                     "fecha_limite_oposicion": None,
                     "enlace_inpi": f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={m['numero_acta']}",
                     "evidencia": [{"metodo":"resolucion","estado_nuevo":estado_norm,"estado_viejo":estado_viejo}],
@@ -211,7 +216,7 @@ def run():
         # Se insertan en la base con un boletin_numero ficticio (0) para las oposiciones
         for op in oposiciones:
             op["boletin_numero"] = 0
-            op["fecha_publicacion"] = datetime.utcnow().date().isoformat()
+            op["fecha_publicacion"] = datetime.now(timezone.utc).date().isoformat()
             op["nivel_riesgo"] = "alto"
             op["similitud_score"] = 1.0
             
@@ -334,9 +339,11 @@ def run():
                 if plazos_a_insertar:
                     supabase_insert("plazos_legales", plazos_a_insertar)
                     
+            if not actas:
+                raise RuntimeError(f"boletin {b['numero']}: 0 actas parseadas, no se marca completo (revisar formato PDF)")
             supabase_patch_boletin(b["numero"], {
                 "actas_encontradas": len(actas), "estado": "completo",
-                "ultimo_error": None, "actualizado_at": datetime.utcnow().isoformat() + "Z",
+                "ultimo_error": None, "actualizado_at": datetime.now(timezone.utc).isoformat(),
             })
             reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
             procesados_esta_corrida += 1
@@ -345,7 +352,7 @@ def run():
             try:
                 supabase_patch_boletin(b["numero"], {
                     "estado": "fallido", "ultimo_error": str(e)[:3500],
-                    "actualizado_at": datetime.utcnow().isoformat() + "Z",
+                    "actualizado_at": datetime.now(timezone.utc).isoformat(),
                 })
             except Exception:
                 pass
