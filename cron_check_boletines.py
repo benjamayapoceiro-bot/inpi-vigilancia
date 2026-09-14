@@ -103,8 +103,34 @@ def run():
 
     # Mantenimiento de cartera: procesa logos subidos desde el dashboard y
     # genera avisos de vencimiento — se hace en cada corrida, haya o no boletines nuevos.
+    def supabase_storage_upload(path, img_bytes, content_type="image/png"):
+        """Sube bytes al bucket logos-marcas vía Storage REST con service_role.
+        Devuelve la URL pública del objeto o None si falla (no rompe el cron)."""
+        try:
+            # Asegurar bucket (idempotente, ignora si ya existe)
+            try:
+                requests.post(
+                    f"{SUPABASE_URL}/storage/v1/bucket",
+                    headers={**HEADERS, "Content-Type": "application/json"},
+                    json={"id": "logos-marcas", "name": "logos-marcas", "public": False},
+                    timeout=15,
+                )
+            except Exception:
+                pass
+            r = requests.post(
+                f"{SUPABASE_URL}/storage/v1/object/logos-marcas/{path}",
+                headers={**HEADERS, "Content-Type": content_type, "x-upsert": "true"},
+                data=img_bytes,
+                timeout=30,
+            )
+            r.raise_for_status()
+            return f"{SUPABASE_URL}/storage/v1/object/logos-marcas/{path}"
+        except Exception as e:
+            print(f"storage upload falló para {path}: {e}")
+            return None
+
     procesar_logos_pendientes(
-        supabase_get, supabase_patch, supabase_insert,
+        supabase_get, supabase_patch, supabase_insert, supabase_storage_upload,
     )
     avisos_venc = generar_avisos_vencimiento(
         supabase_get, supabase_insert,
