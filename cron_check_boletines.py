@@ -46,11 +46,6 @@ def reportar_a_supabase(mensaje: str):
         print("no se pudo reportar a debug_logs:", e)
 
 
-def _ahora_utc():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc)
-
-
 def run():
     import re
     import subprocess
