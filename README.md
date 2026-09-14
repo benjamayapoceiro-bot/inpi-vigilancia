@@ -18,3 +18,5 @@ Cron semanal que:
 Secrets necesarios en GitHub (Settings → Secrets and variables → Actions):
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD` (resumen semanal por mail)
+- `INPI_CUIT` + `INPI_CLAVE` (opcional: activa consulta de oposiciones vía `ConsultaNotificaciones`; sin estos el cron corre igual pero skipea esa parte con aviso en `debug_logs`)

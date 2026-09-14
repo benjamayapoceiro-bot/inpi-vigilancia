@@ -25,6 +25,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          INPI_CUIT: ${{ secrets.INPI_CUIT }}
+          INPI_CLAVE: ${{ secrets.INPI_CLAVE }}
         run: |
           mkdir -p debug
           python cron_check_boletines.py > debug/last_run.txt 2>&1 || echo "EXIT_CODE=$?" >> debug/last_run.txt
