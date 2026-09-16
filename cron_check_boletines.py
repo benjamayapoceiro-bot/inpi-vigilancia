@@ -171,6 +171,9 @@ def run():
                 "estudio_id": m.get("estudio_id")} for m in cartera]
     logo_por_marca = {m["id"]: m.get("logo_url") for m in cartera}
     estudio_por_marca = {m["id"]: m.get("estudio_id") for m in cartera if m.get("estudio_id")}
+    nombre_por_marca = {m["id"]: m.get("nombre") for m in cartera}
+    for v in (avisos_venc or []):
+        v["nombre_marca"] = nombre_por_marca.get(v.get("marca_vigilada_id"), "Marca")
 
     # Emails por estudio: email_contacto primero, fallback a perfiles con mail real.
     # El estudio no configura nada: demo-signup y admin-create-user ya guardan el mail.
@@ -288,6 +291,7 @@ def run():
             op["fecha_publicacion"] = datetime.now(timezone.utc).date().isoformat()
             op["nivel_riesgo"] = "alto"
             op["similitud_score"] = 1.0
+            op["enlace_inpi"] = f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={op.get('acta_nueva')}"
             
         try:
             # Usar acta_nueva como clave única secundaria
@@ -428,6 +432,11 @@ def run():
             })
             reportar_a_supabase(f"boletin {b['numero']} OK: {len(actas)} actas, {len(alertas)} alertas")
             procesados_esta_corrida += 1
+            for al in alertas:
+                al["boletin_numero"] = b["numero"]
+                al["fecha_publicacion"] = fecha_publicacion.isoformat()
+                al["fecha_limite_oposicion"] = fecha_limite.isoformat()
+                al["enlace_inpi"] = f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={al['acta_nueva']}"
             todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
         except Exception as e:
             try:
