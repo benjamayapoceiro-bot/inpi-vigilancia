@@ -8,7 +8,8 @@ pHash capta estructura de frecuencias (bueno con recortes/ruido), dHash capta
 gradientes de brillo (bueno con variaciones de color/contraste). Se exige que
 AMBOS coincidan por encima del umbral para considerar "muy parecido".
 
-Devuelve {numero_acta: {"phash": ..., "dhash": ...}}.
+Devuelve {numero_acta: {"phash": ..., "dhash": ..., "png": bytes}}.
+El png es el logo recortado en formato PNG para poder subirlo a Storage.
 """
 import pymupdf as fitz
 import imagehash
@@ -52,10 +53,12 @@ def extraer_logos(pdf_path: str, tolerancia_y: float = 15.0) -> dict:
                 pix = fitz.Pixmap(doc, xref)
                 if pix.n - pix.alpha > 3:
                     pix = fitz.Pixmap(fitz.csRGB, pix)
-                im = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+                png_bytes = pix.tobytes("png")
+                im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
                 resultado[acta_asociada["numero"]] = {
                     "phash": str(imagehash.phash(im)),
                     "dhash": str(imagehash.dhash(im)),
+                    "png": png_bytes,
                 }
             except Exception:
                 continue

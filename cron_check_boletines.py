@@ -55,7 +55,7 @@ def run():
     from matcher import buscar_coincidencias
     from extract_logos import extraer_logos
     from mantenimiento_cartera import procesar_logos_pendientes, generar_avisos_vencimiento
-    from notificar_email import enviar_resumen
+    from notificar_email import enviar_resumen, repartir_por_estudio, es_email_real
     from consultar_notificaciones_inpi import consultar_oposiciones_nuevas
 
     INPI_LISTADO = "https://portaltramites.inpi.gob.ar/Boletines?Tipo_Item=3"
@@ -162,11 +162,59 @@ def run():
     nuevos = sorted(nuevos, key=lambda b: b["numero"])
     reportar_a_supabase(f"Pendientes o reintentables: {len(nuevos)} boletines")
 
-    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,numero_acta")
+    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,logo_url,numero_acta,estudio_id")
     cartera = [{"id": m["id"], "nombre": m["nombre"], "clase": m["clase"],
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
                 "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash"),
-                "numero_acta": m.get("numero_acta")} for m in cartera]
+                "logo_url": m.get("logo_url"),
+                "numero_acta": m.get("numero_acta"),
+                "estudio_id": m.get("estudio_id")} for m in cartera]
+    logo_por_marca = {m["id"]: m.get("logo_url") for m in cartera}
+    estudio_por_marca = {m["id"]: m.get("estudio_id") for m in cartera if m.get("estudio_id")}
+
+    # Emails por estudio: email_contacto primero, fallback a perfiles con mail real.
+    # El estudio no configura nada: demo-signup y admin-create-user ya guardan el mail.
+    info_estudios = {}
+    try:
+        for e in supabase_get("estudios", "select=id,nombre,email_contacto"):
+            info_estudios[e["id"]] = {"nombre": e.get("nombre") or "estudio",
+                                      "email": e.get("email_contacto")}
+        sin_mail = [eid for eid, i in info_estudios.items() if not es_email_real(i.get("email"))]
+        if sin_mail:
+            for p in supabase_get("perfiles", "select=email,estudio_id"):
+                eid = p.get("estudio_id")
+                if eid in sin_mail and es_email_real(p.get("email")):
+                    info_estudios[eid]["email"] = p["email"]
+                    sin_mail.remove(eid)
+                if not sin_mail:
+                    break
+    except Exception as e:
+        reportar_a_supabase(f"WARN no se pudieron cargar emails de estudios: {e}")
+
+    def agrupar_para_estudios(alertas_fuertes, avisos_venc):
+        grupos = {}
+        def anotar(estudio_id, alerta=None, venc=None):
+            info = info_estudios.get(estudio_id or "")
+            if not info or not es_email_real(info.get("email")):
+                return
+            g = grupos.setdefault(info["email"], {"nombre": info["nombre"], "alertas": [], "vencimientos": []})
+            if alerta is not None:
+                g["alertas"].append(alerta)
+            if venc is not None:
+                g["vencimientos"].append(venc)
+        for a in (alertas_fuertes or []):
+            anotar(estudio_por_marca.get(a.get("marca_vigilada_id")), alerta=a)
+        for v in (avisos_venc or []):
+            anotar(estudio_por_marca.get(v.get("marca_vigilada_id")), venc=v)
+        return grupos
+
+    def notificar_todo(alertas_fuertes, avisos_venc):
+        """Admin recibe resumen global + cada estudio lo suyo. Best-effort."""
+        grupos = agrupar_para_estudios(alertas_fuertes, avisos_venc)
+        if grupos:
+            n = repartir_por_estudio(grupos)
+            reportar_a_supabase(f"Mails por estudio enviados: {n}/{len(grupos)}")
+        enviar_resumen(alertas_fuertes, avisos_venc)
 
     todas_las_alertas_fuertes = []
     
@@ -250,7 +298,7 @@ def run():
             reportar_a_supabase(f"Error guardando oposiciones: {e}")
 
     if not nuevos:
-        enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
+        notificar_todo(todas_las_alertas_fuertes, avisos_venc)
         reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
         return
     inicio = time.time()
@@ -292,6 +340,16 @@ def run():
                 if acta["tipo"] == "M" and acta["acta"] in logos:
                     acta["logo_phash"] = logos[acta["acta"]]["phash"]
                     acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
+                    try:
+                        png = logos[acta["acta"]].get("png")
+                        if png:
+                            url_acta = supabase_storage_upload(
+                                f"actas/{b['numero']}/{acta['acta']}.png", png, "image/png"
+                            )
+                            if url_acta:
+                                acta["logo_url_acta"] = url_acta
+                    except Exception as e:
+                        print(f"logo acta {acta['acta']} no se pudo subir: {e}")
 
             try:
                 historico_rows = [{"acta": a["acta"], "clase": a["clase"], "tipo": a["tipo"], "denominacion": a["denominacion"] or None, "titulares": a["titulares"], "boletin_numero": b["numero"], "fecha_publicacion": fecha_publicacion.isoformat()} for a in actas if a.get("acta")]
@@ -322,6 +380,8 @@ def run():
                     "similitud_logo": score if al["tipo_match"] == "logo" else None,
                     "similitud_score": score,
                     "score_ajustado": al.get("score_ajustado", score),
+                    "logo_url_acta": next((a.get("logo_url_acta") for a in actas if a.get("acta") == al["acta_nueva"]), None),
+                    "logo_url_cartera": logo_por_marca.get(al["marca_vigilada_id"]),
                     "requiere_oposicion": al.get("requiere_oposicion", al["requiere_atencion"]),
                     "borrador_oposicion": al["borrador_oposicion"],
                     "fecha_publicacion": fecha_publicacion.isoformat(),
@@ -380,7 +440,7 @@ def run():
             reportar_a_supabase(f"boletin {b['numero']} FALLO, se reintentará: {e}")
             continue
 
-    enviar_resumen(todas_las_alertas_fuertes, avisos_venc)
+    notificar_todo(todas_las_alertas_fuertes, avisos_venc)
     reportar_a_supabase(f"OK: corrida completa, {procesados_esta_corrida} de {len(nuevos)} boletines procesados")
 
 
