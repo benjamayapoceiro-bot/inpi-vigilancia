@@ -1,3 +1,4 @@
 Faltan INPI_CUIT o INPI_CLAVE, omitiendo consulta de notificaciones de oposición.
+storage upload falló para actas/11112/4771682.png: 520 Server Error: <none> for url: https://oomczohvjqycpuhhmotv.supabase.co/storage/v1/object/logos-marcas/actas/11112/4771682.png
 --- curl directo a Supabase ---
 HTTP_STATUS:201
