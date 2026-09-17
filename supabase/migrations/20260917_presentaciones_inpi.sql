@@ -32,4 +32,4 @@ create policy "presentaciones select_own"
 drop policy if exists "presentaciones insert service_role" on public.presentaciones_inpi;
 create policy "presentaciones insert service_role"
   on public.presentaciones_inpi for insert
-  with check (true);
+  with check (auth.role() = 'service_role');
