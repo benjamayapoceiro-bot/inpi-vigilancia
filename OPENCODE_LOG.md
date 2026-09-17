@@ -74,3 +74,35 @@ Esperando instrucciones de Timmy para:
 **Resultado:** 🟢 Auditoría lista para fixes
 
 **Próxima acción:** Esperando OK de Timmy para procedimiento de fixes
+
+---
+
+## 2026-09-17 — Fase 2: Presentaciones (6 trámites) + Auditoría
+
+**Estado:** Backend completo y desplegado (mock); frontend reescrito; testes en vivo OK
+
+**Qué se hizo:**
+- Leídos los manuales INPI (HTML exportado) y extraído el SOAP exacto de los 6 trámites
+- `inpi-presentar` generalizado: `tramite` + multi-titular via `titulares[]` (marca nueva, marca renovación, modelo nuevo, modelo renovación, patente invención, modelo de utilidad)
+- Camino legacy (sin `titulares[]`) byte-idéntico para Marca Nueva
+- Validaciones: suma porcentajes = 100, CUIT no repetidos, clase modelo 1–32, documentos obligatorios en modelos (idIndice 9/10 dibujos + 1037 figura uno)
+- Auditoría en tabla nueva `presentaciones_inpi` (payload filtrado: sin `cuitInpi`/`claveInpi`)
+- `demo-signup` usado para crear usuario de prueba y validar flujo completo (login JWT → 6 trámites → actas simuladas → filas de auditoría)
+- Frontend `www/js/presentar.js` reescrito: selector de trámite, mini-componente multi-titular con suma 100%, checkbox legal + `UI.confirm()` en los 6 trámites
+
+**Verificado:**
+- XML de los 6 trámites contra el manual (SolicitudRelacionadas/Acta, `nro_renovacion`, Datos_Modelos, `<tem:Solicitantes/>` vacío, idIndice 9/1037/25, Tipo_antecedente 82)
+- En vivo: 401 sin sesión, 6 trámites → `{ok, acta, preview}`, errores de validación (suma != 100, modelo sin docs), legacy sigue funcionando, filas de auditoría sin credenciales
+- `presentar.js`: payloads por trámite verificados con harness Node (node --check OK)
+
+**Archivos creados/modificados:**
+- `supabase/functions/inpi-presentar/index.ts` (v4 desplegada, verify_jwt true)
+- `supabase/migrations/20260917_presentaciones_inpi.sql` (tabla auditoría + RLS)
+- `www/js/presentar.js` (reescrito) — en repo del dashboard
+- `OPENCODE_LOG.md` (esta entrada)
+
+**Pendientes (no Fase 2):**
+- Calendario: ajuste visual modo oscuro/claro
+- Decidir dominio (sub-dominio dashboard + landing Netlify)
+
+**Próxima acción:** Revisión de Timmy; merge de Fase 2
