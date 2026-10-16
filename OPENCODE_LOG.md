@@ -131,3 +131,23 @@ Esperando instrucciones de Timmy para:
 - Dominio (mañana, como pediste).
 
 **Próxima acción:** Auditoría Fase 1 con los 5 auditores → tabla de hallazgos para tu aprobación.
+
+---
+
+## 2026-10-16 (noche) — Auditoría loop + fixes código seguros
+
+**Estado:** Auditado (5 auditores), juez consolidó. Aplicados solo fixes de código que no requieren confirmación (sin RLS/thresholds/legal). Resto en tabla para aprobación de Timmy.
+
+**Aplicados y pusheados:**
+- CRON-16: `reenviar_estudio.py` `avisado` → `notificado` (el reenvío estaba roto siempre).
+- CRON-17: `estado` agregado al select de cartera (resoluciones fantasma).
+- CRON-03/04: sentinel `boletines_procesados "0"` SISTEMA + `boletin_numero "0"` string; resoluciones/oposiciones entran al mail aunque falle el upsert.
+- CRON-20: `supabase_upsert` loguea `r.text` en el error (adiós 400 ciego, caso boletín 11116).
+- SEG-17/CRON-15: validación UUID de ESTUDIO_ID en `reenviar_estudio.py`.
+- MAT-39/40/41: parse tolerante (guion/corte de línea, denominación multilínea, fallback titular crudo) + `parse_boletin.stats` reportado al cron.
+- FRT-23: `escapeHtml` escapa comillas; `toast` escapa mensaje.
+- FRT-26: botón reenviar explica `GITHUB_PAT` faltante y usa `Auth.getSession()`.
+
+**Verificado:** `py_compile` + `node --check` OK; parse sintético (multilínea, titular sin `*`, corte de línea) OK; benchmark matcher verde.
+
+**Tabla del juez (pendiente aprobación de Timmy):** ver reporte en chat 2026-10-16 noche.
