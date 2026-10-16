@@ -24,16 +24,24 @@ def parse_boletin(txt_path: str):
     chunks = re.split(r"(?=\(21\)\s*Acta\s+\d+)", raw)
 
     records = []
+    descartadas = 0
     for chunk in chunks:
-        m_acta = re.search(r"\(21\)\s*Acta\s+(\d+)\s*-\s*\(51\)\s*Clase\s+(\d+)", chunk)
+        # MAT-39: tolerante a guion ausente o corte de línea entre Acta y (51).
+        m_acta = re.search(r"\(21\)\s*Acta\s+(\d+).*?\(51\)\s*Clase\s+(\d+)", chunk, re.DOTALL)
         if not m_acta:
+            descartadas += 1
             continue
 
         acta = m_acta.group(1)
         clase = m_acta.group(2)
 
-        m_tipo = re.search(r"\(40\)\s*([A-Z])\s*\(54\)[ \t]*([^\n]*)", chunk)
-        tipo = m_tipo.group(1) if m_tipo else None
+        # MAT-40: denominación puede envolver en 2 líneas; capturar hasta el
+        # próximo campo en vez de solo hasta \n.
+        m_tipo = re.search(
+            r"\(40\)\s*([A-Za-z])\s*\(54\)\s*(.*?)(?=\(22\)|\(73\)|\(57\)|\(30\)|\(74\)|\(44\)|\Z)",
+            chunk, re.DOTALL,
+        )
+        tipo = m_tipo.group(1).upper() if m_tipo else None
         denominacion = clean(m_tipo.group(2)) if m_tipo else ""
         if re.match(r"^\(\d+\)", denominacion):
             denominacion = ""  # se coló el campo siguiente; tratar como vacía
@@ -49,6 +57,9 @@ def parse_boletin(txt_path: str):
         # Separar titulares individuales (vienen como "NOMBRE - PAIS *NOMBRE2 - PAIS *")
         titulares = re.findall(r"([A-ZÁÉÍÓÚÑ0-9.,&' ]+?)\s*-\s*([A-Z]{2})\s*\*", titular_raw)
         titulares = [{"nombre": clean(n), "pais": p} for n, p in titulares]
+        if not titulares and titular_raw:
+            # MAT-41: fallback — mejor titular crudo que ninguno (triage/oposición).
+            titulares = [{"nombre": titular_raw[:200], "pais": ""}]
 
         # Productos/servicios
         m_prod = re.search(
@@ -74,6 +85,12 @@ def parse_boletin(txt_path: str):
             "productos_servicios": productos[:2000],  # cap por las dudas
         })
 
+    parse_boletin.stats = {
+        "chunks": len(chunks),
+        "records": len(records),
+        "descartadas": descartadas,
+        "d_vacias": sum(1 for r in records if r["tipo"] == "D" and not r["denominacion"]),
+    }
     return records
 
 

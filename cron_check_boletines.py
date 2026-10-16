@@ -79,7 +79,15 @@ def run():
             f"{SUPABASE_URL}/rest/v1/{tabla}?on_conflict={on_conflict}",
             headers=headers, json=rows, timeout=60,
         )
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except Exception:
+            cuerpo = ""
+            try:
+                cuerpo = (r.text or "")[:2000]
+            except Exception:
+                pass
+            raise RuntimeError(f"upsert {tabla} falló ({r.status_code}): {cuerpo}")
         return r.json()
 
     def supabase_insert(tabla, rows):
@@ -174,11 +182,12 @@ def run():
     nuevos = sorted(nuevos, key=lambda b: b["numero"])
     reportar_a_supabase(f"Pendientes o reintentables: {len(nuevos)} boletines")
 
-    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,logo_whash,logo_url,numero_acta,estudio_id")
+    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,logo_whash,logo_url,numero_acta,estudio_id,estado")
     cartera = [{"id": m["id"], "nombre": m["nombre"], "clase": m["clase"],
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
                 "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash"),
                 "logo_whash": m.get("logo_whash"),
+                "estado": m.get("estado"),
                 "logo_url": m.get("logo_url"),
                 "numero_acta": m.get("numero_acta"),
                 "estudio_id": m.get("estudio_id")} for m in cartera]
@@ -230,9 +239,15 @@ def run():
         no sea ambiguo."""
         grupos = agrupar_para_estudios(alertas_fuertes, avisos_venc)
         if grupos:
-            n = repartir_por_estudio(grupos, contexto=contexto)
-            reportar_a_supabase(f"Mails por estudio enviados: {n}/{len(grupos)}")
-        enviar_resumen(alertas_fuertes, avisos_venc, contexto=contexto)
+            try:
+                n = repartir_por_estudio(grupos, contexto=contexto)
+                reportar_a_supabase(f"Mails por estudio enviados: {n}/{len(grupos)}")
+            except Exception as e:
+                reportar_a_supabase(f"WARN reparto por estudio falló: {e}")
+        try:
+            enviar_resumen(alertas_fuertes, avisos_venc, contexto=contexto)
+        except Exception as e:
+            reportar_a_supabase(f"WARN resumen admin falló (se reintentará próxima corrida): {e}")
 
     todas_las_alertas_fuertes = []
     
@@ -272,7 +287,7 @@ def run():
                     "clase_acta": m["clase"],
                     "relacion_clases": "misma",
                     "titular_nuevo": row.get("Titulares") or "",
-                    "boletin_numero": 0,
+                    "boletin_numero": "0",
                     "similitud_ortografica": 1.0,
                     "similitud_fonetica": 1.0,
                     "similitud_score": 1.0,
@@ -290,31 +305,44 @@ def run():
             reportar_a_supabase(f"Error chequeando resolución de {m.get('id')}: {e}")
             continue
     if resoluciones:
+        # El mail es el camino crítico: se agregan ANTES de persistir para
+        # que un fallo de upsert no las borre del resumen (CRON-04).
+        todas_las_alertas_fuertes.extend(resoluciones)
         try:
             supabase_upsert("alertas", resoluciones, "marca_vigilada_id,acta_nueva,boletin_numero")
-            todas_las_alertas_fuertes.extend(resoluciones)
             reportar_a_supabase(f"Resoluciones guardadas: {len(resoluciones)}")
         except Exception as e:
-            reportar_a_supabase(f"Error guardando resoluciones: {e}")
+            reportar_a_supabase(f"Error guardando resoluciones (igual van en el mail): {e}")
 
     # ── CHECK OPOSICIONES RECIBIDAS (API SOAP) ──
     oposiciones = consultar_oposiciones_nuevas(cartera, dias_atras=7)
     if oposiciones:
-        # Se insertan en la base con un boletin_numero ficticio (0) para las oposiciones
+        # boletin_numero "0" es fila fantasma SISTEMA: la FK de alertas exige
+        # padre en boletines_procesados, se asegura idempotente (CRON-03).
+        try:
+            supabase_upsert("boletines_procesados", [{
+                "numero_boletin": "0",
+                "tipo": "SISTEMA",
+                "estado": "completo",
+                "actas_encontradas": 0,
+                "ultimo_error": None,
+            }], "numero_boletin")
+        except Exception as e:
+            reportar_a_supabase(f"WARN no se pudo asegurar boletín SISTEMA 0: {e}")
         for op in oposiciones:
-            op["boletin_numero"] = 0
+            op["boletin_numero"] = "0"
             op["fecha_publicacion"] = datetime.now(timezone.utc).date().isoformat()
             op["nivel_riesgo"] = "alto"
             op["similitud_score"] = 1.0
             op["enlace_inpi"] = f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={op.get('acta_nueva')}"
-            
+
+        todas_las_alertas_fuertes.extend(oposiciones)
         try:
             # Usar acta_nueva como clave única secundaria
             supabase_upsert("alertas", oposiciones, "marca_vigilada_id,acta_nueva,boletin_numero")
-            todas_las_alertas_fuertes.extend(oposiciones)
             reportar_a_supabase(f"Oposiciones recibidas y guardadas: {len(oposiciones)}")
         except Exception as e:
-            reportar_a_supabase(f"Error guardando oposiciones: {e}")
+            reportar_a_supabase(f"Error guardando oposiciones (igual van en el mail): {e}")
 
     if not nuevos:
         notificar_todo(todas_las_alertas_fuertes, avisos_venc,
@@ -354,6 +382,15 @@ def run():
             subprocess.run(["pdftotext", "-layout", pdf_path, txt_path], timeout=60, check=True)
 
             actas = parse_boletin(txt_path)
+            try:
+                st = getattr(parse_boletin, "stats", {}) or {}
+                reportar_a_supabase(
+                    f"boletin {b['numero']} parseo: {st.get('records', len(actas))} actas "
+                    f"de {st.get('chunks', '?')} chunks, {st.get('descartadas', 0)} descartadas, "
+                    f"{st.get('d_vacias', 0)} D sin denominación"
+                )
+            except Exception:
+                pass
 
             logos = extraer_logos(pdf_path)
             for acta in actas:

@@ -23,9 +23,12 @@ def sget(tabla, params=""):
 
 
 def main():
+    import re
     estudio_id = os.environ.get("ESTUDIO_ID", "").strip()
     if not estudio_id:
         raise RuntimeError("Falta ESTUDIO_ID")
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", estudio_id):
+        raise RuntimeError(f"ESTUDIO_ID inválido: {estudio_id!r}")
     est = sget("estudios", f"select=id,nombre,email_contacto&id=eq.{estudio_id}")
     if not est:
         raise RuntimeError(f"Estudio {estudio_id} no existe")
@@ -55,7 +58,7 @@ def main():
             })
     vencs = sget(
         "avisos_vencimiento",
-        f"select=marca_vigilada_id,fecha_vencimiento,dias_restantes&avisado=is.false"
+        f"select=marca_vigilada_id,fecha_vencimiento,dias_restantes&notificado=is.false"
         f"&marca_vigilada_id=in.({','.join(ids)})" if ids else "select=marca_vigilada_id&limit=0",
     )
     for v in vencs:
