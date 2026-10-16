@@ -106,3 +106,28 @@ Esperando instrucciones de Timmy para:
 - Decidir dominio (sub-dominio dashboard + landing Netlify)
 
 **Próxima acción:** Revisión de Timmy; merge de Fase 2
+
+---
+
+## 2026-10-16 — Loop matching + mails + cron + frontend + agentes auditoría
+
+**Estado:** Implementado y pusheado (ambos repos). Pendiente: GITHUB_PAT de Timmy, aprobación de hallazgos de auditoría.
+
+**Qué se hizo:**
+- `matcher.py`: M/F también corren texto (fix "casa cumbre"), normalización saneada (sin E→I/O→U/R→L, conserva dígitos, stopwords, singular), `token_set`, bonus prefijo, umbral siglas 0.90, contención atenuada en distinta, `requiere_oposicion` incluye afín, CLASES_AFINES simétrica + ampliada, `rapidfuzz` con fallback difflib.
+- `extract_logos.py`: filtro por área (no ancho), tolerancia relativa, incluye F, `whash`; `distancia_logo_combinada` ensemble ph/dh/wh; `mantenimiento_cartera.py` + migración `20261016_logo_whash.sql` (aplicada); retry storage 3x; cron/rescan traen `logo_whash`; rescan unificado a 0.60/0.75.
+- `notificar_email.py` + cron: resumen SIEMPRE (admin + estudios, con contexto de boletines); presupuesto 12→20 min.
+- `admin-reenviar` (edge, verify_jwt, desplegada v1) + `reenviar.yml` + `reenviar_estudio.py` + botón ✉ por estudio en admin.js.
+- Dashboard: heartbeat "Cotejo activo" en panel (debug_logs), filtro severidad + leyenda en alertas, tokens dark en detalle/app, resto de hardcodeados (logos en #fff se dejan a propósito).
+- `.opencode/agent/`: 8 agentes (auditoria, dev, 5 auditores, juez) con modelos reales.
+- `requirements.txt` + `cron.yml`/`rescan.yml`: agregado `rapidfuzz`.
+
+**Verificado:**
+- `tests/test_matcher_benchmark.py` verde + 2 tests nuevos (siglas no alertan, M matchea texto). Caso "casa cumbre" simulado: 2 alertas alto donde antes había 0, sin FPs en CASA ARISTEGUI/NEGRO/PROCASA.
+- `py_compile` + `node --check` OK. Sin secretos en diffs (solo refs `${{ secrets.* }}`).
+
+**Acción de Timmy fuera del repo:**
+- Crear PAT fine-grained (Actions:write en inpi-vigilancia) y setearlo como secret `GITHUB_PAT` en Supabase (edge functions) para que funcione el botón reenviar.
+- Dominio (mañana, como pediste).
+
+**Próxima acción:** Auditoría Fase 1 con los 5 auditores → tabla de hallazgos para tu aprobación.
