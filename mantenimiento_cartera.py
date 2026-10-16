@@ -24,6 +24,10 @@ def procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert, sup
             im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             phash = str(imagehash.phash(im))
             dhash = str(imagehash.dhash(im))
+            try:
+                whash = str(imagehash.whash(im))
+            except Exception:
+                whash = None
             logo_url = None
             if supabase_storage_upload:
                 try:
@@ -31,6 +35,8 @@ def procesar_logos_pendientes(supabase_get, supabase_patch, supabase_insert, sup
                 except Exception as e:
                     print(f"no se pudo subir logo de {m['id']}: {e}")
             patch_data = {"logo_phash": phash, "logo_dhash": dhash, "logo_pendiente": None}
+            if whash:
+                patch_data["logo_whash"] = whash
             if logo_url:
                 patch_data["logo_url"] = logo_url
             supabase_patch("marcas_vigiladas", m["id"], patch_data)

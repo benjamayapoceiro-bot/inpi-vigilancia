@@ -32,10 +32,11 @@ def supabase_insert(tabla, rows):
 
 def main():
     procesados = supabase_get("boletines_procesados", "select=numero_boletin,tipo&tipo=eq.MARCAS NUEVAS")
-    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash")
+    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,logo_whash")
     cartera = [{"id": m["id"], "nombre": m["nombre"], "clase": m["clase"],
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
-                "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash")} for m in cartera]
+                "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash"),
+                "logo_whash": m.get("logo_whash")} for m in cartera]
 
     total_alertas = 0
     for p in procesados:
@@ -50,11 +51,13 @@ def main():
             actas = parse_boletin(txt_path)
             logos = extraer_logos(pdf_path)
             for acta in actas:
-                if acta["tipo"] == "M" and acta["acta"] in logos:
+                if acta["tipo"] in ("M", "F") and acta["acta"] in logos:
                     acta["logo_phash"] = logos[acta["acta"]]["phash"]
                     acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
+                    if logos[acta["acta"]].get("whash"):
+                        acta["logo_whash"] = logos[acta["acta"]]["whash"]
 
-            alertas = buscar_coincidencias(cartera, actas, umbral=0.72, umbral_logo=0.80)
+            alertas = buscar_coincidencias(cartera, actas, umbral=0.60, umbral_logo=0.75)
             rows = [{
                 "marca_vigilada_id": al["marca_vigilada_id"],
                 "tipo_match": al["tipo_match"], "acta_nueva": al["acta_nueva"],

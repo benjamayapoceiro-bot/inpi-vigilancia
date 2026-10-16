@@ -3,12 +3,13 @@ Extrae los logos embebidos en el PDF del boletín y los asocia a su acta
 correspondiente por proximidad de posición en la página (probado: la
 etiqueta "Acta" y la imagen del logo comparten prácticamente el mismo y0).
 
-Calcula DOS hashes por logo (pHash + dHash) para bajar falsos positivos/negativos:
-pHash capta estructura de frecuencias (bueno con recortes/ruido), dHash capta
-gradientes de brillo (bueno con variaciones de color/contraste). Se exige que
-AMBOS coincidan por encima del umbral para considerar "muy parecido".
+Calcula TRES hashes por logo (pHash + dHash + wHash) para bajar falsos
+positivos/negativos: pHash capta estructura de frecuencias (bueno con
+recortes/ruido), dHash capta gradientes de brillo (bueno con variaciones de
+color/contraste), wHash capta estructura wavelet (robusto a escalado).
+El matcher pondera los tres.
 
-Devuelve {numero_acta: {"phash": ..., "dhash": ..., "png": bytes}}.
+Devuelve {numero_acta: {"phash": ..., "dhash": ..., "whash": ..., "png": bytes}}.
 El png es el logo recortado en formato PNG para poder subirlo a Storage.
 """
 import pymupdf as fitz
@@ -17,12 +18,22 @@ from PIL import Image
 import io
 import re
 
+# Filtros por área (px² del rect en la página): descartan divisores/rule-lines
+# y páginas completas rasterizadas, sin el tope fijo de ancho que perdía
+# logos anchos reales (antes: width > 200 descartaba 60-70% de logos).
+AREA_MIN = 40 * 40
+AREA_MAX = 1200 * 1200
 
-def extraer_logos(pdf_path: str, tolerancia_y: float = 15.0) -> dict:
+
+def extraer_logos(pdf_path: str, tolerancia_y: float = None) -> dict:
     doc = fitz.open(pdf_path)
     resultado = {}
 
     for page in doc:
+        if tolerancia_y is None:
+            tol = max(15.0, float(page.rect.height) * 0.02)
+        else:
+            tol = tolerancia_y
         words = page.get_text("words")
         actas_en_pagina = []
         for i, w in enumerate(words):
@@ -39,12 +50,12 @@ def extraer_logos(pdf_path: str, tolerancia_y: float = 15.0) -> dict:
             if not rects:
                 continue
             y0_img = rects[0].y0
-            w_img = rects[0].width
+            area = rects[0].width * rects[0].height
 
-            if w_img > 200:
+            if area < AREA_MIN or area > AREA_MAX:
                 continue
 
-            candidatos = [a for a in actas_en_pagina if abs(a["y0"] - y0_img) < tolerancia_y]
+            candidatos = [a for a in actas_en_pagina if abs(a["y0"] - y0_img) < tol]
             if not candidatos:
                 continue
             acta_asociada = min(candidatos, key=lambda a: abs(a["y0"] - y0_img))
@@ -58,6 +69,7 @@ def extraer_logos(pdf_path: str, tolerancia_y: float = 15.0) -> dict:
                 resultado[acta_asociada["numero"]] = {
                     "phash": str(imagehash.phash(im)),
                     "dhash": str(imagehash.dhash(im)),
+                    "whash": str(imagehash.whash(im)),
                     "png": png_bytes,
                 }
             except Exception:

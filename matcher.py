@@ -8,57 +8,115 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+try:
+    from rapidfuzz import fuzz as _rf_fuzz
+
+    def _ratio(a: str, b: str) -> float:
+        return _rf_fuzz.ratio(a, b) / 100.0
+except ImportError:  # pragma: no cover - fallback sin rapidfuzz
+    def _ratio(a: str, b: str) -> float:
+        return SequenceMatcher(None, a, b).ratio()
+
+
+# Palabras vacías del español que no aportan a la identidad de la marca.
+STOPWORDS = frozenset({
+    "DE", "DEL", "LA", "EL", "LAS", "LOS", "Y", "E", "EN", "UN", "UNA",
+    "UNOS", "UNAS", "AL", "CON", "POR", "PARA", "THE", "OF", "AND",
+})
+
+
+def _sin_acentos(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
 
 def normalizar_fonetico(s: str) -> str:
-    """Normalización simple para captar similitud fonética en español:
-    saca acentos, agrupa sonidos equivalentes (b/v, s/c/z, y/ll, etc.)
-    y colapsa letras repetidas."""
-    s = s.upper()
-    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    """Normalización para captar similitud fonética en español rioplatense:
+    saca acentos, agrupa sonidos equivalentes (b/v, s/c/z, ll/y, etc.)
+    y colapsa letras repetidas. Solo equivalencias seguras: NO colapsa
+    vocales (e/i, o/u) ni r/l, que antes generaban falsos positivos."""
+    s = _sin_acentos(s.upper()).replace("&", " Y ")
     reemplazos = [
-        ("SHISHA", "YIYA"), ("QU", "K"), ("CU", "K"), ("C", "K"), ("Z", "S"), ("S", "S"),
-        ("V", "B"), ("B", "B"), ("LL", "Y"), ("H", ""), ("Ñ", "N"),
-        ("PH", "F"), ("W", "V"), ("SH", "Y"), ("CH", "Y"),
-        ("Y", "I"), ("I", "I"), ("J", "Y"), ("G", "Y"),
-        ("R", "L"), ("L", "L"), ("E", "I"), ("O", "U"),
+        ("SHISHA", "YIYA"), ("QU", "K"), ("CU", "K"), ("C", "K"), ("Z", "S"),
+        ("V", "B"), ("LL", "Y"), ("H", ""), ("Ñ", "N"),
+        ("PH", "F"), ("W", "B"), ("SH", "Y"), ("CH", "Y"),
     ]
     for a, b in reemplazos:
         s = s.replace(a, b)
     s = re.sub(r"(.)\1+", r"\1", s)  # colapsar repetidas: "TT" -> "T"
-    s = re.sub(r"[^A-Z]", "", s)
+    s = re.sub(r"[^A-Z0-9]", "", s)  # se conservan dígitos: 3M, 7UP, etc.
     return s
 
 
-def similitud(a: str, b: str) -> dict:
+def singularizar(w: str) -> str:
+    """Plural naive: CUMBRES -> CUMBRE. Solo quita S final en palabras
+    de más de 4 letras que no terminen en ES (para no romper LUNES)."""
+    if len(w) > 4 and w.endswith("S") and not w.endswith("ES"):
+        return w[:-1]
+    return w
+
+
+def palabras_clave(s: str) -> list:
+    """Palabras normalizadas, sin stopwords y singularizadas."""
+    out = []
+    for w in re.findall(r"[A-Z0-9]+", _sin_acentos(s.upper())):
+        nw = singularizar(normalizar_fonetico(w))
+        if nw and nw not in STOPWORDS:
+            out.append(nw)
+    return out
+
+
+def token_set(a: str, b: str) -> float:
+    """Dice sobre conjuntos de palabras clave: captura 'CASA CUMBRE' vs
+    'CASA CUMBRE PATAGONIA' aunque el ratio de cadena completa caiga."""
+    sa, sb = set(palabras_clave(a)), set(palabras_clave(b))
+    if not sa or not sb:
+        return 0.0
+    inter = sa & sb
+    if not inter:
+        return 0.0
+    return round(2 * len(inter) / (len(sa) + len(sb)), 3)
+
+
+def similitud(a: str, b: str, relacion: str = None) -> dict:
     a_norm, b_norm = normalizar_fonetico(a), normalizar_fonetico(b)
-    ortografica = SequenceMatcher(None, a.upper(), b.upper()).ratio()
-    fonetica = SequenceMatcher(None, a_norm, b_norm).ratio()
+    a_up, b_up = _sin_acentos(a.upper()), _sin_acentos(b.upper())
+    ortografica = _ratio(a_up, b_up)
+    fonetica = _ratio(a_norm, b_norm)
 
     # Orden de palabras: "CASA CUMBRE" vs "CUMBRE CASA" son la misma marca
-    # en la práctica, pero SequenceMatcher sobre la cadena completa las
-    # penaliza fuerte por el orden. Se compara con las palabras ordenadas
-    # alfabéticamente (y ya normalizadas fonéticamente) para neutralizar eso.
-    palabras_a = sorted(normalizar_fonetico(w) for w in re.findall(r"\w+", a))
-    palabras_b = sorted(normalizar_fonetico(w) for w in re.findall(r"\w+", b))
+    # en la práctica, pero el ratio sobre la cadena completa las penaliza
+    # fuerte por el orden. Se compara con las palabras ordenadas
+    # alfabéticamente (clave, sin vacías) para neutralizar eso.
+    palabras_a = sorted(palabras_clave(a))
+    palabras_b = sorted(palabras_clave(b))
     orden = 0.0
     if len(palabras_a) > 1 or len(palabras_b) > 1:
-        orden = SequenceMatcher(None, "".join(palabras_a), "".join(palabras_b)).ratio()
+        orden = _ratio("".join(palabras_a), "".join(palabras_b))
+
+    tset = token_set(a, b)
 
     # Contención: si una marca es el núcleo dominante de la otra (más larga),
-    # el ratio de SequenceMatcher sobre las cadenas completas subestima el
-    # riesgo real — caso típico: "AYUDIN" vs "AYUDIN ANTI-SPLASH", donde el
-    # agregado busca justamente esquivar la comparación literal.
+    # el ratio sobre las cadenas completas subestima el riesgo real — caso
+    # típico: "AYUDIN" vs "AYUDIN ANTI-SPLASH". En clase distinta se atenúa.
     contencion = 0.0
     if len(a_norm) >= 4 and len(b_norm) >= 4 and (a_norm in b_norm or b_norm in a_norm):
         corto, largo = (a_norm, b_norm) if len(a_norm) <= len(b_norm) else (b_norm, a_norm)
         contencion = round(0.75 + 0.25 * (len(corto) / len(largo)), 3)
+        if relacion == "distinta":
+            contencion = round(contencion * 0.85, 3)
+
+    score = max(ortografica, fonetica, orden, tset, contencion)
+    # Bonus prefijo: marcas que arrancan igual suelen ser el mismo núcleo.
+    if len(a_norm) >= 4 and a_norm[:4] == b_norm[:4]:
+        score = min(1.0, score + 0.04)
 
     return {
         "ortografica": round(ortografica, 3),
         "fonetica": round(fonetica, 3),
         "orden": round(orden, 3),
+        "token_set": round(tset, 3),
         "contencion": contencion,
-        "score": round(max(ortografica, fonetica, orden, contencion), 3),
+        "score": round(score, 3),
     }
 
 
@@ -75,34 +133,55 @@ def distancia_hash(hash_a: str, hash_b: str) -> float:
 
 
 def distancia_logo_combinada(vig: dict, acta: dict) -> float:
-    scores = []
+    ph = dh = wh = None
     if vig.get("logo_phash") and acta.get("logo_phash"):
-        scores.append(distancia_hash(vig["logo_phash"], acta["logo_phash"]))
+        ph = distancia_hash(vig["logo_phash"], acta["logo_phash"])
     if vig.get("logo_dhash") and acta.get("logo_dhash"):
-        scores.append(distancia_hash(vig["logo_dhash"], acta["logo_dhash"]))
+        dh = distancia_hash(vig["logo_dhash"], acta["logo_dhash"])
+    if vig.get("logo_whash") and acta.get("logo_whash"):
+        wh = distancia_hash(vig["logo_whash"], acta["logo_whash"])
+    scores = [s for s in (ph, dh, wh) if s is not None]
     if not scores:
         return 0.0
-    if len(scores) == 2:
-        ph, dh = scores[0], scores[1]
-        if min(ph, dh) < 0.70:
-            return round(min(ph, dh) * 0.92, 3)
+    if len(scores) >= 2 and min(scores) < 0.70:
+        return round(min(scores) * 0.92, 3)
+    if ph is not None and dh is not None and wh is not None:
+        return round(ph * 0.50 + dh * 0.30 + wh * 0.20, 3)
+    if ph is not None and dh is not None:
         return round(ph * 0.55 + dh * 0.45, 3)
-    return round(scores[0], 3)
+    return round(sum(scores) / len(scores), 3)
 
 
 UMBRAL_ATENCION = 0.85
 UMBRAL_TEXTO = 0.60
 UMBRAL_LOGO = 0.75
 
-CLASES_AFINES = {
+_CLASES_AFINES_BASE = {
     9: [35, 38, 41, 42], 35: [9, 38, 41, 42], 42: [9, 35, 38, 41],
     25: [18, 26, 35], 18: [25, 26], 3: [5, 21, 44], 5: [3, 44],
     29: [30, 31, 32, 33, 43], 30: [29, 31, 32, 33, 43],
-    36: [35, 37, 45], 37: [36, 45], 11: [7, 37], 7: [11, 37],
+    32: [29, 30, 33, 43], 33: [29, 30, 32, 43], 43: [29, 30, 32, 33],
+    31: [29, 30],
+    36: [35, 37, 45], 37: [36, 45], 45: [35, 36, 37, 42],
+    11: [7, 37], 7: [11, 37],
+    44: [3, 5, 10, 21], 10: [44], 21: [3, 44],
+    16: [35, 41], 41: [9, 35, 42, 16, 28], 28: [41], 38: [9, 42],
+    14: [35], 24: [25], 26: [25, 18], 20: [11],
 }
+
+# Cierre simétrico: si A es afín a B, B es afín a A (antes duplicado a mano).
+CLASES_AFINES = {k: set(v) for k, v in _CLASES_AFINES_BASE.items()}
+for _k, _vs in list(CLASES_AFINES.items()):
+    for _x in _vs:
+        CLASES_AFINES.setdefault(_x, set()).add(_k)
+CLASES_AFINES = {k: sorted(v) for k, v in CLASES_AFINES.items()}
 
 
 def relacion_clases(c1: int, c2: int) -> str:
+    try:
+        c1, c2 = int(c1), int(c2)
+    except (TypeError, ValueError):
+        return "distinta"
     if c1 == c2:
         return "misma"
     if c2 in CLASES_AFINES.get(c1, []) or c1 in CLASES_AFINES.get(c2, []):
@@ -175,11 +254,22 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.60, umbral_log
             umbral_efectivo = umbral if relacion == "misma" else (0.68 if relacion == "afin" else 0.72)
             umbral_logo_ef = umbral_logo if relacion == "misma" else (0.78 if relacion == "afin" else 0.82)
 
-            if vig.get("tipo", "D") == "D" and acta["denominacion"]:
-                if not vig.get("nombre"):
-                    continue
-                sim = similitud(vig["nombre"], acta["denominacion"])
-                if sim["score"] >= umbral_efectivo:
+            # Texto: corre para D y también para M/F cuando ambos lados
+            # tienen denominación (una mixta idéntica a un acta denominativa
+            # debe alertar aunque el logo no matchee).
+            umbral_txt = umbral_efectivo
+            try:
+                min_len = min(
+                    len(re.sub(r"[^A-Z0-9]", "", _sin_acentos(str(vig.get("nombre", "")).upper()))),
+                    len(re.sub(r"[^A-Z0-9]", "", _sin_acentos(str(acta.get("denominacion", "")).upper()))),
+                )
+            except Exception:
+                min_len = 99
+            if min_len <= 3:
+                umbral_txt = max(umbral_efectivo, 0.90)  # siglas: exigir casi exacto
+            if vig.get("nombre") and acta.get("denominacion"):
+                sim = similitud(vig["nombre"], acta["denominacion"], relacion)
+                if sim["score"] >= umbral_txt:
                     riesgo = calcular_riesgo(sim["score"], relacion, "texto")
                     alertas.append({
                         "tipo_match": "texto",
@@ -192,7 +282,7 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.60, umbral_log
                         "titular_nuevo": acta["titulares"], "similitud": sim,
                         "nivel_riesgo": riesgo["nivel"], "score_ajustado": riesgo["score_ajustado"],
                     })
-            elif vig.get("tipo") in ("M", "F") and (vig.get("logo_phash") or vig.get("logo_dhash")):
+            if vig.get("tipo") in ("M", "F") and (vig.get("logo_phash") or vig.get("logo_dhash")):
                 score_logo = distancia_logo_combinada(vig, acta)
                 if score_logo >= umbral_logo_ef:
                     riesgo = calcular_riesgo(score_logo, relacion, "logo")
@@ -222,7 +312,7 @@ def buscar_coincidencias(marcas_vigiladas, actas_nuevas, umbral=0.60, umbral_log
             al["borrador_oposicion"] = generar_borrador_oposicion(al)
         elif al.get("nivel_riesgo") in ("alto", "medio"):
             al["requiere_atencion"] = True
-            al["requiere_oposicion"] = score >= UMBRAL_ATENCION and misma
+            al["requiere_oposicion"] = score >= UMBRAL_ATENCION and (misma or al.get("relacion_clases") == "afin")
             al["borrador_oposicion"] = generar_borrador_oposicion(al) if al["requiere_oposicion"] else None
         else:
             al["requiere_atencion"] = False

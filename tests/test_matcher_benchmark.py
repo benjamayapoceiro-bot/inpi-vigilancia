@@ -5,10 +5,32 @@ casos_texto = [
     ("CASA CUMBRE", "CASA CUMBRRE", 0.85, "misma"),
     ("CASA CUMBRE", "CASA CUMBRE", 1.0, "misma"),
     ("CRESPO THURN", "CRESPO THURM", 0.80, "misma"),
-    ("REALLY UP", "REAL AGENCY", 0.55, "afin"),
+    ("REALLY UP", "REAL AGENCY", 0.45, "afin"),  # marcas distintas: precisión > recall
     ("AYUDIN", "AYUDIN ANTI-SPLASH", 0.75, "misma"),
     ("CASA CUMBRE", "CASA CUMBRE", 1.0, "distinta"),
+    ("CASA DE CUMBRE", "CASA CUMBRE", 0.85, "misma"),  # stopwords no rompen
+    ("CUMBRES PATAGONICAS", "CUMBRE PATAGONICA", 0.85, "misma"),  # plural naive
+    ("TORTE", "TORTEN", 0.80, "misma"),
+    ("3M", "3M", 1.0, "misma"),  # dígitos conservados
 ]
+
+def test_siglas_no_matchean():
+    # IBM vs IBN en misma clase: umbral 0.90 para siglas, no debe alertar
+    vig = [{"id": "9", "nombre": "IBM", "clase": 9, "cliente": "x", "tipo": "D"}]
+    actas = [{"acta": "5000009", "denominacion": "IBN", "clase": 9, "titulares": []}]
+    als = buscar_coincidencias(vig, actas)
+    print("siglas IBM vs IBN alertas:", len(als))
+    assert len(als) == 0, "siglas distintas no deben alertar"
+
+def test_mixta_matchea_texto():
+    # Vigilada M con nombre idéntico a acta D: debe alertar por texto
+    vig = [{"id": "1", "nombre": "CASA CUMBRE", "clase": 42, "cliente": "Casa Cumbre",
+            "tipo": "M", "logo_phash": "ffff0000ffff0000", "logo_dhash": "ffff0000ffff0000"}]
+    actas = [{"acta": "5000010", "denominacion": "CASA CUMBRE", "clase": 42, "titulares": []}]
+    als = buscar_coincidencias(vig, actas)
+    tipos = [a["tipo_match"] for a in als]
+    print("mixta vs denominativa idéntica:", tipos)
+    assert "texto" in tipos, "M con nombre debe matchear texto del acta"
 
 def test_benchmark():
     print("=== Benchmark texto ===")
@@ -46,3 +68,6 @@ def test_benchmark():
 
 if __name__ == "__main__":
     test_benchmark()
+    test_siglas_no_matchean()
+    test_mixta_matchea_texto()
+    print("OK nuevos tests")

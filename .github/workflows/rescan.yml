@@ -15,7 +15,7 @@ jobs:
           python-version: "3.12"
       - run: |
           sudo apt-get update && sudo apt-get install -y poppler-utils
-          pip install requests pymupdf imagehash pillow
+          pip install requests pymupdf imagehash pillow rapidfuzz
       - env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

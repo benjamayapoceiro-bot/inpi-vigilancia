@@ -105,29 +105,41 @@ def run():
     # genera avisos de vencimiento — se hace en cada corrida, haya o no boletines nuevos.
     def supabase_storage_upload(path, img_bytes, content_type="image/png"):
         """Sube bytes al bucket logos-marcas vía Storage REST con service_role.
-        Devuelve la URL pública del objeto o None si falla (no rompe el cron)."""
+        Reintenta 3 veces con backoff (el 520 de Storage es transitorio).
+        Devuelve la URL del objeto o None si falla (no rompe el cron)."""
+        import time as _time
+        # Asegurar bucket (idempotente, ignora si ya existe)
         try:
-            # Asegurar bucket (idempotente, ignora si ya existe)
-            try:
-                requests.post(
-                    f"{SUPABASE_URL}/storage/v1/bucket",
-                    headers={**HEADERS, "Content-Type": "application/json"},
-                    json={"id": "logos-marcas", "name": "logos-marcas", "public": False},
-                    timeout=15,
-                )
-            except Exception:
-                pass
-            r = requests.post(
-                f"{SUPABASE_URL}/storage/v1/object/logos-marcas/{path}",
-                headers={**HEADERS, "Content-Type": content_type, "x-upsert": "true"},
-                data=img_bytes,
-                timeout=30,
+            requests.post(
+                f"{SUPABASE_URL}/storage/v1/bucket",
+                headers={**HEADERS, "Content-Type": "application/json"},
+                json={"id": "logos-marcas", "name": "logos-marcas", "public": False},
+                timeout=15,
             )
-            r.raise_for_status()
-            return f"{SUPABASE_URL}/storage/v1/object/logos-marcas/{path}"
-        except Exception as e:
-            print(f"storage upload falló para {path}: {e}")
-            return None
+        except Exception:
+            pass
+        ultimo_error = None
+        for intento in range(3):
+            try:
+                r = requests.post(
+                    f"{SUPABASE_URL}/storage/v1/object/logos-marcas/{path}",
+                    headers={**HEADERS, "Content-Type": content_type, "x-upsert": "true"},
+                    data=img_bytes,
+                    timeout=30,
+                )
+                r.raise_for_status()
+                return f"{SUPABASE_URL}/storage/v1/object/logos-marcas/{path}"
+            except Exception as e:
+                ultimo_error = e
+                cuerpo = ""
+                try:
+                    cuerpo = (r.text or "")[:200]
+                except Exception:
+                    pass
+                print(f"storage upload intento {intento + 1}/3 falló para {path}: {e} {cuerpo}")
+                _time.sleep(2 * (intento + 1))
+        print(f"storage upload falló para {path} tras 3 intentos: {ultimo_error}")
+        return None
 
     procesar_logos_pendientes(
         supabase_get, supabase_patch, supabase_insert, supabase_storage_upload,
@@ -162,10 +174,11 @@ def run():
     nuevos = sorted(nuevos, key=lambda b: b["numero"])
     reportar_a_supabase(f"Pendientes o reintentables: {len(nuevos)} boletines")
 
-    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,logo_url,numero_acta,estudio_id")
+    cartera = supabase_get("marcas_vigiladas", "select=id,nombre,clase,cliente,tipo,logo_phash,logo_dhash,logo_whash,logo_url,numero_acta,estudio_id")
     cartera = [{"id": m["id"], "nombre": m["nombre"], "clase": m["clase"],
                 "cliente": m.get("cliente", ""), "tipo": m.get("tipo", "D"),
                 "logo_phash": m.get("logo_phash"), "logo_dhash": m.get("logo_dhash"),
+                "logo_whash": m.get("logo_whash"),
                 "logo_url": m.get("logo_url"),
                 "numero_acta": m.get("numero_acta"),
                 "estudio_id": m.get("estudio_id")} for m in cartera]
@@ -211,13 +224,15 @@ def run():
             anotar(estudio_por_marca.get(v.get("marca_vigilada_id")), venc=v)
         return grupos
 
-    def notificar_todo(alertas_fuertes, avisos_venc):
-        """Admin recibe resumen global + cada estudio lo suyo. Best-effort."""
+    def notificar_todo(alertas_fuertes, avisos_venc, contexto=None):
+        """Admin recibe resumen global + cada estudio lo suyo. Best-effort.
+        Se manda SIEMPRE (aunque sea 'sin novedades') para que el silencio
+        no sea ambiguo."""
         grupos = agrupar_para_estudios(alertas_fuertes, avisos_venc)
         if grupos:
-            n = repartir_por_estudio(grupos)
+            n = repartir_por_estudio(grupos, contexto=contexto)
             reportar_a_supabase(f"Mails por estudio enviados: {n}/{len(grupos)}")
-        enviar_resumen(alertas_fuertes, avisos_venc)
+        enviar_resumen(alertas_fuertes, avisos_venc, contexto=contexto)
 
     todas_las_alertas_fuertes = []
     
@@ -302,11 +317,12 @@ def run():
             reportar_a_supabase(f"Error guardando oposiciones: {e}")
 
     if not nuevos:
-        notificar_todo(todas_las_alertas_fuertes, avisos_venc)
+        notificar_todo(todas_las_alertas_fuertes, avisos_venc,
+                       contexto="Sin boletines nuevos esta semana. Cartera al día.")
         reportar_a_supabase("OK: corrida completa, sin boletines nuevos")
         return
     inicio = time.time()
-    PRESUPUESTO_SEGUNDOS = 12 * 60  # deja margen dentro del límite de GitHub Actions
+    PRESUPUESTO_SEGUNDOS = 20 * 60  # deja margen dentro del límite de GitHub Actions
     procesados_esta_corrida = 0
 
     for b in nuevos:
@@ -341,9 +357,11 @@ def run():
 
             logos = extraer_logos(pdf_path)
             for acta in actas:
-                if acta["tipo"] == "M" and acta["acta"] in logos:
+                if acta["tipo"] in ("M", "F") and acta["acta"] in logos:
                     acta["logo_phash"] = logos[acta["acta"]]["phash"]
                     acta["logo_dhash"] = logos[acta["acta"]]["dhash"]
+                    if logos[acta["acta"]].get("whash"):
+                        acta["logo_whash"] = logos[acta["acta"]]["whash"]
                     try:
                         png = logos[acta["acta"]].get("png")
                         if png:
@@ -449,7 +467,9 @@ def run():
             reportar_a_supabase(f"boletin {b['numero']} FALLO, se reintentará: {e}")
             continue
 
-    notificar_todo(todas_las_alertas_fuertes, avisos_venc)
+    contexto = (f"Boletines procesados esta corrida: {procesados_esta_corrida}/{len(nuevos)}. "
+                f"Quedan {len(nuevos) - procesados_esta_corrida} pendientes para la próxima.")
+    notificar_todo(todas_las_alertas_fuertes, avisos_venc, contexto=contexto)
     reportar_a_supabase(f"OK: corrida completa, {procesados_esta_corrida} de {len(nuevos)} boletines procesados")
 
 

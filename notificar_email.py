@@ -94,10 +94,14 @@ def _borrador_cliente(a, nombre_estudio):
     )
 
 
-def _armar_cuerpo(alertas_fuertes: list, avisos_vencimiento: list, nombre_estudio: str = None):
+def _armar_cuerpo(alertas_fuertes: list, avisos_vencimiento: list, nombre_estudio: str = None, contexto: str = None):
     partes = []
     if nombre_estudio:
         partes.append(f"Hola {nombre_estudio}, esto detectó la vigilancia automática:\n")
+    if not alertas_fuertes and not avisos_vencimiento:
+        partes.append("✅ Sin novedades esta semana: ningún choque ni vencimiento en tu cartera.")
+        if contexto:
+            partes.append(f"\n{contexto}")
     if alertas_fuertes:
         oposiciones = [a for a in alertas_fuertes if a.get("tipo_match") == "oposicion_recibida"]
         resoluciones = [a for a in alertas_fuertes if a.get("tipo_match") == "resolucion"]
@@ -144,25 +148,29 @@ def _mandar(address: str, app_password: str, destinatario: str, asunto: str, cue
         server.send_message(msg)
 
 
-def enviar_resumen(alertas_fuertes: list, avisos_vencimiento: list, destinatario: str = None):
+def enviar_resumen(alertas_fuertes: list, avisos_vencimiento: list, destinatario: str = None, contexto: str = None):
+    """Resumen global al admin. Se manda SIEMPRE (aunque sea 'sin novedades')
+    para que el silencio no sea ambiguo: si el cron vive, hay mail."""
     address, app_password = _credenciales()
     if not address or not app_password:
         print("Sin GMAIL_ADDRESS/GMAIL_APP_PASSWORD configurados, no se manda mail")
         return
 
-    if not alertas_fuertes and not avisos_vencimiento:
-        return  # nada urgente, no molestar por mail
-
-    cuerpo = _armar_cuerpo(alertas_fuertes, avisos_vencimiento)
-    _mandar(address, app_password, destinatario or address,
-            f"Vigilancia INPI — {len(alertas_fuertes)} alerta(s), {len(avisos_vencimiento)} vencimiento(s)",
-            cuerpo)
+    cuerpo = _armar_cuerpo(alertas_fuertes, avisos_vencimiento, contexto=contexto)
+    if alertas_fuertes or avisos_vencimiento:
+        asunto = (f"Vigilancia INPI — {len(alertas_fuertes)} alerta(s), "
+                  f"{len(avisos_vencimiento)} vencimiento(s)")
+    else:
+        asunto = "Vigilancia INPI — sin novedades (cron OK)"
+    _mandar(address, app_password, destinatario or address, asunto, cuerpo)
     print("Mail de resumen enviado.")
 
 
-def enviar_a_estudio(destinatario: str, nombre_estudio: str, alertas: list, vencimientos: list):
+def enviar_a_estudio(destinatario: str, nombre_estudio: str, alertas: list, vencimientos: list, contexto: str = None):
     """Mail individual a un estudio con SOLO sus alertas/vencimientos.
-    El remitente siempre es el Gmail de la plataforma."""
+    Se manda SIEMPRE (aunque sea 'sin novedades') para que cada estudio
+    sepa que su vigilancia sigue activa. El remitente siempre es el Gmail
+    de la plataforma."""
     address, app_password = _credenciales()
     if not address or not app_password:
         print("Sin GMAIL_ADDRESS/GMAIL_APP_PASSWORD configurados, no se manda mail")
@@ -170,24 +178,26 @@ def enviar_a_estudio(destinatario: str, nombre_estudio: str, alertas: list, venc
     if not es_email_real(destinatario):
         print(f"email no válido para estudio {nombre_estudio}, se omite")
         return False
-    if not alertas and not vencimientos:
-        return False
-    cuerpo = _armar_cuerpo(alertas, vencimientos, nombre_estudio)
-    _mandar(address, app_password, destinatario,
-            f"Vigilancia INPI — {len(alertas)} alerta(s), {len(vencimientos)} vencimiento(s)",
-            cuerpo)
+    cuerpo = _armar_cuerpo(alertas, vencimientos, nombre_estudio, contexto=contexto)
+    if alertas or vencimientos:
+        asunto = (f"Vigilancia INPI — {len(alertas)} alerta(s), "
+                  f"{len(vencimientos)} vencimiento(s)")
+    else:
+        asunto = "Vigilancia INPI — sin novedades (tu cartera sigue vigilada)"
+    _mandar(address, app_password, destinatario, asunto, cuerpo)
     print(f"Mail enviado a estudio {nombre_estudio} <{destinatario}>.")
     return True
 
 
-def repartir_por_estudio(grupos: dict):
+def repartir_por_estudio(grupos: dict, contexto: str = None):
     """grupos: {email: {"nombre": str, "alertas": [...], "vencimientos": [...]}}.
     Best-effort: un fallo no frena al resto. Devuelve cantidad enviada."""
     enviados = 0
     for email, g in grupos.items():
         try:
             if enviar_a_estudio(email, g.get("nombre") or "estudio",
-                                g.get("alertas") or [], g.get("vencimientos") or []):
+                                 g.get("alertas") or [], g.get("vencimientos") or [],
+                                 contexto=contexto):
                 enviados += 1
         except Exception as e:
             print(f"no se pudo mandar a {email}: {e}")

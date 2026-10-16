@@ -1,0 +1,33 @@
+name: reenviar-resumen-estudio
+on:
+  workflow_dispatch:
+    inputs:
+      estudio_id:
+        description: "UUID del estudio al que reenviar el resumen"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  reenviar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ESTUDIO_ID: ${{ inputs.estudio_id }}
+        run: python reenviar_estudio.py > debug/reenvio_${{ inputs.estudio_id }}.txt 2>&1 || true
+      - run: |
+          git config user.email "bot@bot.com"
+          git config user.name "cron-bot"
+          git add debug/reenvio_*.txt || true
+          git commit -m "reenvio manual ${{ inputs.estudio_id }}" || echo "nada"
+          git push || echo "push falló (avisar a Timmy)"
