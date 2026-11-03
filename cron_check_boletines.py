@@ -71,6 +71,16 @@ def run():
         r.raise_for_status()
         return r.json()
 
+    def supabase_rpc(nombre, payload=None):
+        r = requests.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/{nombre}",
+            headers=HEADERS,
+            json=payload or {},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
     def supabase_upsert(tabla, rows, on_conflict):
         if not rows:
             return
@@ -345,8 +355,19 @@ def run():
             reportar_a_supabase(f"Error guardando resoluciones (igual van en el mail): {e}")
 
     # ── CHECK OPOSICIONES RECIBIDAS (API SOAP) ──
+    try:
+        credenciales_por_estudio = supabase_rpc("cron_listar_credenciales_inpi")
+        reportar_a_supabase(
+            f"Credenciales INPI disponibles para consulta: {len(credenciales_por_estudio or [])} estudio(s)."
+        )
+    except Exception as e:
+        credenciales_por_estudio = []
+        reportar_a_supabase(
+            f"ERROR recuperando credenciales INPI cifradas desde Vault: {type(e).__name__}: {str(e)[:400]}"
+        )
+
     oposiciones = consultar_oposiciones_nuevas(
-        cartera, dias_atras=7,
+        cartera, credenciales_por_estudio or [], dias_atras=7,
         reportar=lambda msg: reportar_a_supabase(msg),
     )
     if oposiciones:
