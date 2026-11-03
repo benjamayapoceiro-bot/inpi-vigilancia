@@ -492,7 +492,9 @@ def run():
                 al["fecha_publicacion"] = fecha_publicacion.isoformat()
                 al["fecha_limite_oposicion"] = fecha_limite.isoformat()
                 al["enlace_inpi"] = f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={al['acta_nueva']}"
-            todas_las_alertas_fuertes.extend(al for al in alertas if al["similitud"]["score"] >= 0.85)
+            # Toda coincidencia detectada se notifica al estudio: el nivel de riesgo
+            # informa la prioridad, pero no elimina alertas medias/bajas del correo.
+            todas_las_alertas_fuertes.extend(alertas)
         except Exception as e:
             try:
                 supabase_patch_boletin(b["numero"], {
