@@ -1,10 +1,11 @@
 """
-Manda mails de resumen cuando el cron encuentra algo que amerita
-atención: alertas con score >= 0.85 o vencimientos dentro de 90 días.
+Manda mails de resumen con todas las coincidencias detectadas por el cron,
+oposiciones recibidas y vencimientos dentro de 90 días. El riesgo ordena
+la prioridad; no se descartan coincidencias medias/bajas del correo.
 
 Un solo remitente (Gmail del admin) reparte a cada estudio: el cron
-agrupa por estudio y cada uno recibe SOLO lo suyo en su
-email_contacto — el estudio no configura nada.
+agrupa por estudio y cada uno recibe SOLO lo suyo en su email_contacto.
+Las coincidencias se presentan como detecciones automáticas sujetas a revisión.
 
 Requiere en el entorno:
   GMAIL_ADDRESS — tu dirección de Gmail (remitente y resumen admin)
@@ -66,7 +67,13 @@ def _ficha_alerta(a):
         lineas.append(f"  Marca nueva: \"{a.get('denominacion_nueva') or '(solo logo, sin texto)'}\" — Acta {a.get('acta_nueva')}")
         lineas.append(f"  Clase tuya: {a.get('clase')} | Clase del acta: {a.get('clase_acta', a.get('clase'))} ({a.get('relacion_clases', 'misma')})")
         lineas.append(f"  Titular solicitante: {_titular_txt(a.get('titular_nuevo'))}")
-        lineas.append(f"  Similitud: {_pct(a)}% ({tipo}) — riesgo {str(a.get('nivel_riesgo', '?')).upper()}")
+        sim = a.get("similitud") or {}
+        extras = []
+        if sim.get("ortografica") is not None:
+            extras.append(f"ortográfica {round(float(sim.get('ortografica') or 0) * 100)}%")
+        if sim.get("fonetica") is not None:
+            extras.append(f"fonética {round(float(sim.get('fonetica') or 0) * 100)}%")
+        lineas.append(f"  Similitud general: {_pct(a)}% ({tipo})" + (f" — {', '.join(extras)}" if extras else "") + f" — riesgo {str(a.get('nivel_riesgo', '?')).upper()}")
     if a.get("boletin_numero"):
         lineas.append(f"  Boletín: {a.get('boletin_numero')}"
                       + (f" (publicado {a.get('fecha_publicacion')})" if a.get("fecha_publicacion") else ""))
@@ -118,7 +125,7 @@ def _armar_cuerpo(alertas_fuertes: list, avisos_vencimiento: list, nombre_estudi
                 partes.append(_ficha_alerta(a) + "\n")
 
         if similares:
-            partes.append(f"\n⚠ {len(similares)} marca(s) nueva(s) muy parecidas a tu cartera:\n")
+            partes.append(f"\n🔎 {len(similares)} coincidencia(s) detectada(s) para revisar (incluye posibles falsos positivos):\n")
             for a in similares:
                 partes.append(_ficha_alerta(a) + "\n")
 
