@@ -36,16 +36,17 @@ def normalizar_fonetico(s: str) -> str:
     falsos positivos. Es una clave de preselección, no un dictamen jurídico."""
     s = _sin_acentos(str(s or "").upper()).replace("&", " Y ")
     s = re.sub(r"QU", "K", s)
-    s = re.sub(r"GU([EI])", r"G\1", s)  # U muda en GUE/GUI
+    s = s.replace("GUE", "G#E").replace("GUI", "G#I")  # G dura en GUE/GUI
     s = re.sub(r"C(?=[EI])", "S", s)     # CE/CI = sonido /s/ en seseo
     s = re.sub(r"C", "K", s)             # CA/CO/CU/CR/CL = sonido /k/
     s = s.replace("Z", "S")
     s = s.replace("V", "B")
     s = s.replace("LL", "Y")
     s = re.sub(r"G(?=[EI])", "J", s)     # GE/GI y JE/JI
+    s = s.replace("G#", "G")
     s = s.replace("H", "")               # H muda
     s = s.replace("PH", "F")
-    s = re.sub(r"(.)\\1+", r"\\1", s)
+    s = re.sub(r"(.)\1+", r"\1", s)
     s = re.sub(r"[^A-Z0-9Ñ]", "", s)
     return s
 
