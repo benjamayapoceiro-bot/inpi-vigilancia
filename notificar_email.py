@@ -69,9 +69,9 @@ def _ficha_alerta(a):
         lineas.append(f"  Titular solicitante: {_titular_txt(a.get('titular_nuevo'))}")
         sim = a.get("similitud") or {}
         extras = []
-        if sim.get("ortografica") is not None:
+        if tipo != "logo" and sim.get("ortografica") is not None:
             extras.append(f"ortográfica {round(float(sim.get('ortografica') or 0) * 100)}%")
-        if sim.get("fonetica") is not None:
+        if tipo != "logo" and sim.get("fonetica") is not None:
             extras.append(f"fonética {round(float(sim.get('fonetica') or 0) * 100)}%")
         lineas.append(f"  Similitud general: {_pct(a)}% ({tipo})" + (f" — {', '.join(extras)}" if extras else "") + f" — riesgo {str(a.get('nivel_riesgo', '?')).upper()}")
     if a.get("boletin_numero"):
