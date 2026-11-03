@@ -59,7 +59,9 @@ def singularizar(w: str) -> str:
 def palabras_clave(s: str) -> list:
     """Palabras normalizadas, sin stopwords y singularizadas."""
     out = []
-    for w in re.findall(r"[A-Z0-9]+", _sin_acentos(s.upper())):
+    texto = str(s or "").upper().replace("Ñ", "\ue000")
+    texto = _sin_acentos(texto).replace("\ue000", "Ñ")
+    for w in re.findall(r"[A-Z0-9Ñ]+", texto):
         nw = singularizar(normalizar_fonetico(w))
         if nw and nw not in STOPWORDS:
             out.append(nw)
