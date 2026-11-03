@@ -1,6 +1,6 @@
 import unittest
 
-from matcher import similitud, similitud_fonetica_tokens, normalizar_fonetico, buscar_coincidencias
+from matcher import similitud, similitud_fonetica_tokens, normalizar_fonetico, buscar_coincidencias, distancia_logo_combinada
 
 
 class MatchingFoneticoTests(unittest.TestCase):
@@ -38,6 +38,13 @@ class MatchingFoneticoTests(unittest.TestCase):
         self.assertTrue(normalizar_fonetico("GUERRA").startswith("G"))
         self.assertTrue(normalizar_fonetico("JERRA").startswith("J"))
         self.assertNotEqual(normalizar_fonetico("GUERRA"), normalizar_fonetico("JERRA"))
+
+    def test_logo_con_un_solo_hash_se_penaliza(self):
+        score = distancia_logo_combinada(
+            {"logo_phash": "ffffffffffffffff"},
+            {"logo_phash": "ffffffffffffffff"},
+        )
+        self.assertEqual(score, 0.90)
 
 
 if __name__ == "__main__":
