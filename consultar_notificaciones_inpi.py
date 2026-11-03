@@ -64,9 +64,9 @@ def obtener_oposiciones_recibidas(cuit, clave, dias_atras=7):
     
     return oposiciones
 
-def consultar_oposiciones_nuevas(marcas_vigiladas, dias_atras=7, reportar=None):
-    """Consulta notificaciones del INPI y vincula oposiciones a actas vigiladas.
-    reportar es un callback opcional para dejar trazabilidad en debug_logs."""
+def consultar_oposiciones_nuevas(marcas_vigiladas, credenciales, dias_atras=7, reportar=None):
+    """Consulta notificaciones por cada estudio con credenciales entregadas
+    exclusivamente por el RPC service_role de Supabase. Nunca registra CUIT ni clave."""
     def log(mensaje):
         print(mensaje)
         if callable(reportar):
@@ -75,46 +75,54 @@ def consultar_oposiciones_nuevas(marcas_vigiladas, dias_atras=7, reportar=None):
             except Exception:
                 pass
 
-    cuit = os.environ.get("INPI_CUIT")
-    clave = os.environ.get("INPI_CLAVE")
-
-    if not cuit or not clave:
-        log("WARN oposiciones INPI: faltan INPI_CUIT/INPI_CLAVE; consulta omitida.")
-        return []
-
-    try:
-        ops = obtener_oposiciones_recibidas(cuit, clave, dias_atras)
-        log(f"ConsultaNotificaciones INPI: {len(ops)} notificaciones de oposición recibidas en ventana de {dias_atras} días.")
-    except Exception as e:
-        log(f"ERROR ConsultaNotificaciones INPI: {type(e).__name__}: {str(e)[:500]}")
-        return []
-
-    por_acta = {str(m.get("numero_acta", "")).strip(): m for m in marcas_vigiladas if m.get("numero_acta")}
     alertas_oposicion = []
-    sin_vinculo = 0
-
-    for op in ops:
-        acta_afectada = str(op.get("acta") or "").strip()
-        marca_afectada = por_acta.get(acta_afectada)
-        if not marca_afectada:
-            sin_vinculo += 1
+    for cred in credenciales or []:
+        estudio_id = str(cred.get("estudio_id") or "")
+        cuit = cred.get("cuit")
+        clave = cred.get("clave")
+        if not estudio_id or not cuit or not clave:
+            log("WARN oposiciones INPI: registro de credencial incompleto; se omite.")
             continue
 
-        alertas_oposicion.append({
-            "marca_vigilada_id": marca_afectada["id"],
-            "tipo_match": "oposicion_recibida",
-            "acta_nueva": acta_afectada,
-            "denominacion_nueva": "Oposición contra: " + (op.get("denominacion") or marca_afectada.get("nombre", "")),
-            "titular_nuevo": "Tercero opositor (identidad a verificar en INPI)",
-            "clase": marca_afectada.get("clase"),
-            "clase_acta": marca_afectada.get("clase"),
-            "relacion_clases": "misma",
-            "requiere_atencion": True,
-            "requiere_oposicion": False,
-            "borrador_oposicion": None,
-            "similitud": {"score": 1.0, "ortografica": 1.0, "fonetica": 1.0},
-            "nivel_riesgo": "alto",
-        })
+        cartera_estudio = [
+            m for m in marcas_vigiladas
+            if str(m.get("estudio_id") or "") == estudio_id and m.get("numero_acta")
+        ]
+        if not cartera_estudio:
+            log(f"INFO oposiciones INPI: estudio {estudio_id[:8]} sin actas vigiladas.")
+            continue
 
-    log(f"Alertas de oposición vinculadas a cartera: {len(alertas_oposicion)}; notificaciones sin acta en cartera: {sin_vinculo}.")
+        try:
+            ops = obtener_oposiciones_recibidas(cuit, clave, dias_atras)
+            log(f"ConsultaNotificaciones INPI estudio {estudio_id[:8]}: {len(ops)} notificaciones en {dias_atras} días.")
+        except Exception as e:
+            log(f"ERROR ConsultaNotificaciones INPI estudio {estudio_id[:8]}: {type(e).__name__}: {str(e)[:400]}")
+            continue
+
+        por_acta = {str(m.get("numero_acta", "")).strip(): m for m in cartera_estudio}
+        sin_vinculo = 0
+        for op in ops:
+            acta_afectada = str(op.get("acta") or "").strip()
+            marca_afectada = por_acta.get(acta_afectada)
+            if not marca_afectada:
+                sin_vinculo += 1
+                continue
+
+            alertas_oposicion.append({
+                "marca_vigilada_id": marca_afectada["id"],
+                "tipo_match": "oposicion_recibida",
+                "acta_nueva": acta_afectada,
+                "denominacion_nueva": "Oposición contra: " + (op.get("denominacion") or marca_afectada.get("nombre", "")),
+                "titular_nuevo": "Tercero opositor (identidad a verificar en INPI)",
+                "clase": marca_afectada.get("clase"),
+                "clase_acta": marca_afectada.get("clase"),
+                "relacion_clases": "misma",
+                "requiere_atencion": True,
+                "requiere_oposicion": False,
+                "borrador_oposicion": None,
+                "similitud": {"score": 1.0, "ortografica": 1.0, "fonetica": 1.0},
+                "nivel_riesgo": "alto",
+            })
+        log(f"Oposiciones vinculadas estudio {estudio_id[:8]}: {len(ops) - sin_vinculo}; sin acta en cartera: {sin_vinculo}.")
+
     return alertas_oposicion
