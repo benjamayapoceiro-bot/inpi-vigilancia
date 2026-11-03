@@ -185,6 +185,10 @@ def distancia_logo_combinada(vig: dict, acta: dict) -> float:
     scores = [s for s in (ph, dh, wh) if s is not None]
     if not scores:
         return 0.0
+    # Un único hash es evidencia visual débil: penalizarlo para no disparar
+    # alertas altas por una coincidencia perceptual aislada.
+    if len(scores) == 1:
+        return round(scores[0] * 0.90, 3)
     if len(scores) >= 2 and min(scores) < 0.70:
         return round(min(scores) * 0.92, 3)
     if ph is not None and dh is not None and wh is not None:
