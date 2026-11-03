@@ -235,9 +235,39 @@ def run():
 
     def notificar_todo(alertas_fuertes, avisos_venc, contexto=None):
         """Admin recibe resumen global + cada estudio lo suyo. Best-effort.
-        Se manda SIEMPRE (aunque sea 'sin novedades') para que el silencio
-        no sea ambiguo."""
-        grupos = agrupar_para_estudios(alertas_fuertes, avisos_venc)
+        Incluye también alertas recientes no revisadas para cubrir detecciones
+        guardadas en una corrida anterior cuyo filtro de correo las hubiera omitido."""
+        alertas_para_enviar = list(alertas_fuertes or [])
+        try:
+            desde = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            recientes = supabase_get(
+                "alertas",
+                f"select=*,marcas_vigiladas(nombre,cliente)&created_at=gte.{desde}&revisada=eq.false&order=created_at.desc"
+            )
+            claves = {
+                (str(a.get("marca_vigilada_id")), str(a.get("acta_nueva")), str(a.get("boletin_numero")))
+                for a in alertas_para_enviar
+            }
+            for a in recientes or []:
+                clave = (str(a.get("marca_vigilada_id")), str(a.get("acta_nueva")), str(a.get("boletin_numero")))
+                if clave in claves:
+                    continue
+                marca = a.get("marcas_vigiladas") or {}
+                a["marca_vigilada"] = marca.get("nombre") or "Marca vigilada"
+                a["cliente"] = marca.get("cliente") or ""
+                a["similitud"] = {
+                    "score": float(a.get("similitud_score") or 0),
+                    "ortografica": float(a.get("similitud_ortografica") or 0),
+                    "fonetica": float(a.get("similitud_fonetica") or 0),
+                }
+                alertas_para_enviar.append(a)
+                claves.add(clave)
+            if recientes:
+                reportar_a_supabase(f"Alertas recientes no revisadas incorporadas al correo: {len(recientes)}")
+        except Exception as e:
+            reportar_a_supabase(f"WARN no se pudieron recuperar alertas recientes para correo: {e}")
+
+        grupos = agrupar_para_estudios(alertas_para_enviar, avisos_venc)
         if grupos:
             try:
                 n = repartir_por_estudio(grupos, contexto=contexto)
@@ -245,7 +275,7 @@ def run():
             except Exception as e:
                 reportar_a_supabase(f"WARN reparto por estudio falló: {e}")
         try:
-            enviar_resumen(alertas_fuertes, avisos_venc, contexto=contexto)
+            enviar_resumen(alertas_para_enviar, avisos_venc, contexto=contexto)
         except Exception as e:
             reportar_a_supabase(f"WARN resumen admin falló (se reintentará próxima corrida): {e}")
 
