@@ -57,7 +57,12 @@ def _ficha_alerta(a):
     if tipo == "resolucion":
         ev = (a.get("evidencia") or [{}])[0]
         lineas.append(f"  Tu marca: {a.get('marca_vigilada') or '?'} (Acta {a.get('acta_nueva')})")
-        lineas.append(f"  Cambio de estado: {ev.get('estado_viejo', '?')} → {ev.get('estado_nuevo', '?')}")
+        estado_nuevo = str(ev.get("estado_nuevo") or "")
+        lineas.append(f"  Cambio de estado: {ev.get('estado_viejo', '?')} → {estado_nuevo or '?'}")
+        if ev.get("numero_resolucion"):
+            lineas.append(f"  Resolución INPI: {ev['numero_resolucion']}")
+        if estado_nuevo.casefold() in ("concedida", "registrada"):
+            lineas.append("  🏅 TÍTULO DIGITAL: revisar el correo electrónico declarado ante el INPI y la Grilla Digital del expediente para descargarlo.")
     elif tipo == "oposicion_recibida":
         lineas.append(f"  Tu marca afectada: {a.get('marca_vigilada') or a.get('denominacion_nueva') or '?'} (Acta {a.get('acta_nueva')})")
         lineas.append(f"  Opositor: {_titular_txt(a.get('titular_nuevo'))}")
