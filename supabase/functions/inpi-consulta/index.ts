@@ -29,7 +29,7 @@ function envelopeConsultaDenominacion(denominacion: string, tokenIntegrador: str
 </soap:Envelope>`;
 }
 
-function envelopeConsultaCuitOTitular(cuit: string, titular = "", tokenIntegrador: string): string {
+function envelopeConsultaCuitOTitular(cuit: string, titular: string, tokenIntegrador: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
   <soap:Header/>
