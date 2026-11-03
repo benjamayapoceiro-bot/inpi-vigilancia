@@ -77,6 +77,31 @@ def token_set(a: str, b: str) -> float:
     return round(2 * len(inter) / (len(sa) + len(sb)), 3)
 
 
+def similitud_fonetica_tokens(a: str, b: str) -> float:
+    """Compara palabra por palabra usando claves fonéticas españolas.
+    Tolera diferencias de escritura en una palabra dentro de una marca compuesta,
+    sin dar por idénticas frases completas por compartir una palabra genérica."""
+    wa = [w for w in palabras_clave(a) if len(w) >= 4]
+    wb = [w for w in palabras_clave(b) if len(w) >= 4]
+    if not wa or not wb:
+        return 0.0
+
+    def mejor_promedio(origen, destino):
+        usados = set()
+        suma = 0.0
+        for palabra in origen:
+            opciones = [(_ratio(palabra, otra), j) for j, otra in enumerate(destino) if j not in usados]
+            if not opciones:
+                continue
+            score, idx = max(opciones)
+            usados.add(idx)
+            suma += score
+        return suma / max(len(origen), len(destino))
+
+    # Solo se comparan tokens ya normalizados fonéticamente.
+    return round(max(mejor_promedio(wa, wb), mejor_promedio(wb, wa)), 3)
+
+
 def similitud(a: str, b: str, relacion: str = None) -> dict:
     a_norm, b_norm = normalizar_fonetico(a), normalizar_fonetico(b)
     a_up, b_up = _sin_acentos(a.upper()), _sin_acentos(b.upper())
@@ -94,6 +119,7 @@ def similitud(a: str, b: str, relacion: str = None) -> dict:
         orden = _ratio("".join(palabras_a), "".join(palabras_b))
 
     tset = token_set(a, b)
+    fonetica_tokens = similitud_fonetica_tokens(a, b)
 
     # Contención: si una marca es el núcleo dominante de la otra (más larga),
     # el ratio sobre las cadenas completas subestima el riesgo real — caso
@@ -105,14 +131,15 @@ def similitud(a: str, b: str, relacion: str = None) -> dict:
         if relacion == "distinta":
             contencion = round(contencion * 0.85, 3)
 
-    score = max(ortografica, fonetica, orden, tset, contencion)
+    score = max(ortografica, fonetica, orden, tset, fonetica_tokens, contencion)
     # Bonus prefijo: marcas que arrancan igual suelen ser el mismo núcleo.
     if len(a_norm) >= 4 and a_norm[:4] == b_norm[:4]:
         score = min(1.0, score + 0.04)
 
     return {
         "ortografica": round(ortografica, 3),
-        "fonetica": round(fonetica, 3),
+        "fonetica": round(max(fonetica, fonetica_tokens), 3),
+        "fonetica_tokens": fonetica_tokens,
         "orden": round(orden, 3),
         "token_set": round(tset, 3),
         "contencion": contencion,
