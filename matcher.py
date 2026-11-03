@@ -30,20 +30,23 @@ def _sin_acentos(s: str) -> str:
 
 
 def normalizar_fonetico(s: str) -> str:
-    """Normalización para captar similitud fonética en español rioplatense:
-    saca acentos, agrupa sonidos equivalentes (b/v, s/c/z, ll/y, etc.)
-    y colapsa letras repetidas. Solo equivalencias seguras: NO colapsa
-    vocales (e/i, o/u) ni r/l, que antes generaban falsos positivos."""
-    s = _sin_acentos(s.upper()).replace("&", " Y ")
-    reemplazos = [
-        ("SHISHA", "YIYA"), ("QU", "K"), ("CU", "K"), ("C", "K"), ("Z", "S"),
-        ("V", "B"), ("LL", "Y"), ("H", ""), ("Ñ", "N"),
-        ("PH", "F"), ("W", "B"), ("SH", "Y"), ("CH", "Y"),
-    ]
-    for a, b in reemplazos:
-        s = s.replace(a, b)
-    s = re.sub(r"(.)\1+", r"\1", s)  # colapsar repetidas: "TT" -> "T"
-    s = re.sub(r"[^A-Z0-9]", "", s)  # se conservan dígitos: 3M, 7UP, etc.
+    """Clave fonética conservadora para español rioplatense.
+    Seseo (C suave/Z/S), yeísmo (LL/Y), B/V y letras mudas/contextuales.
+    Conserva contrastes relevantes como CH/LL, Ñ/N y W/B para evitar
+    falsos positivos. Es una clave de preselección, no un dictamen jurídico."""
+    s = _sin_acentos(str(s or "").upper()).replace("&", " Y ")
+    s = re.sub(r"QU", "K", s)
+    s = re.sub(r"GU([EI])", r"G\1", s)  # U muda en GUE/GUI
+    s = re.sub(r"C(?=[EI])", "S", s)     # CE/CI = sonido /s/ en seseo
+    s = re.sub(r"C", "K", s)             # CA/CO/CU/CR/CL = sonido /k/
+    s = s.replace("Z", "S")
+    s = s.replace("V", "B")
+    s = s.replace("LL", "Y")
+    s = re.sub(r"G(?=[EI])", "J", s)     # GE/GI y JE/JI
+    s = s.replace("H", "")               # H muda
+    s = s.replace("PH", "F")
+    s = re.sub(r"(.)\\1+", r"\\1", s)
+    s = re.sub(r"[^A-Z0-9Ñ]", "", s)
     return s
 
 
