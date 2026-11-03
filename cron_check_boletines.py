@@ -315,7 +315,10 @@ def run():
             reportar_a_supabase(f"Error guardando resoluciones (igual van en el mail): {e}")
 
     # ── CHECK OPOSICIONES RECIBIDAS (API SOAP) ──
-    oposiciones = consultar_oposiciones_nuevas(cartera, dias_atras=7)
+    oposiciones = consultar_oposiciones_nuevas(
+        cartera, dias_atras=7,
+        reportar=lambda msg: reportar_a_supabase(msg),
+    )
     if oposiciones:
         # boletin_numero "0" es fila fantasma SISTEMA: la FK de alertas exige
         # padre en boletines_procesados, se asegura idempotente (CRON-03).
