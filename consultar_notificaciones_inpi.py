@@ -1,6 +1,7 @@
 import os
 import requests
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape
 from datetime import datetime, timedelta
 
 def obtener_oposiciones_recibidas(cuit, clave, dias_atras=7):
@@ -24,9 +25,9 @@ def obtener_oposiciones_recibidas(cuit, clave, dias_atras=7):
       <direccion></direccion>
       <tipoNotificacion></tipoNotificacion>
       <datosUsuario>
-        <Cuit>{cuit}</Cuit>
+        <Cuit>{escape(str(cuit))}</Cuit>
         <Activa>true</Activa>
-        <Clave>{clave}</Clave>
+        <Clave>{escape(str(clave))}</Clave>
       </datosUsuario>
     </ConsultaNotificaciones>
   </soap:Body>
@@ -63,39 +64,57 @@ def obtener_oposiciones_recibidas(cuit, clave, dias_atras=7):
     
     return oposiciones
 
-def consultar_oposiciones_nuevas(marcas_vigiladas, dias_atras=7):
+def consultar_oposiciones_nuevas(marcas_vigiladas, dias_atras=7, reportar=None):
+    """Consulta notificaciones del INPI y vincula oposiciones a actas vigiladas.
+    reportar es un callback opcional para dejar trazabilidad en debug_logs."""
+    def log(mensaje):
+        print(mensaje)
+        if callable(reportar):
+            try:
+                reportar(mensaje)
+            except Exception:
+                pass
+
     cuit = os.environ.get("INPI_CUIT")
     clave = os.environ.get("INPI_CLAVE")
-    
+
     if not cuit or not clave:
-        print("Faltan INPI_CUIT o INPI_CLAVE, omitiendo consulta de notificaciones de oposición.")
+        log("WARN oposiciones INPI: faltan INPI_CUIT/INPI_CLAVE; consulta omitida.")
         return []
-        
+
     try:
         ops = obtener_oposiciones_recibidas(cuit, clave, dias_atras)
+        log(f"ConsultaNotificaciones INPI: {len(ops)} notificaciones de oposición recibidas en ventana de {dias_atras} días.")
     except Exception as e:
-        print(f"Error consultando ConsultaNotificaciones: {e}")
+        log(f"ERROR ConsultaNotificaciones INPI: {type(e).__name__}: {str(e)[:500]}")
         return []
-        
+
+    por_acta = {str(m.get("numero_acta", "")).strip(): m for m in marcas_vigiladas if m.get("numero_acta")}
     alertas_oposicion = []
-    
+    sin_vinculo = 0
+
     for op in ops:
-        acta_afectada = op.get("acta")
-        
-        # Buscar la marca en nuestra cartera por número de acta
-        marca_afectada = next((m for m in marcas_vigiladas if str(m.get("numero_acta", "")) == str(acta_afectada)), None)
-        
-        if marca_afectada:
-            alertas_oposicion.append({
-                "marca_vigilada_id": marca_afectada["id"],
-                "tipo_match": "oposicion_recibida",
-                "acta_nueva": acta_afectada, # Reusamos este campo para mostrar alerta de que recibió oposición
-                "denominacion_nueva": "Oposición contra: " + (op.get("denominacion") or marca_afectada.get("nombre", "")),
-                "titular_nuevo": "Tercero Opositor",
-                "clase": marca_afectada.get("clase"),
-                "requiere_atencion": True,
-                "borrador_oposicion": None,
-                "similitud": {"score": 1.0, "ortografica": 1.0, "fonetica": 1.0}, # Nivel máximo porque es una alerta crítica directa
-            })
-            
+        acta_afectada = str(op.get("acta") or "").strip()
+        marca_afectada = por_acta.get(acta_afectada)
+        if not marca_afectada:
+            sin_vinculo += 1
+            continue
+
+        alertas_oposicion.append({
+            "marca_vigilada_id": marca_afectada["id"],
+            "tipo_match": "oposicion_recibida",
+            "acta_nueva": acta_afectada,
+            "denominacion_nueva": "Oposición contra: " + (op.get("denominacion") or marca_afectada.get("nombre", "")),
+            "titular_nuevo": "Tercero opositor (identidad a verificar en INPI)",
+            "clase": marca_afectada.get("clase"),
+            "clase_acta": marca_afectada.get("clase"),
+            "relacion_clases": "misma",
+            "requiere_atencion": True,
+            "requiere_oposicion": False,
+            "borrador_oposicion": None,
+            "similitud": {"score": 1.0, "ortografica": 1.0, "fonetica": 1.0},
+            "nivel_riesgo": "alto",
+        })
+
+    log(f"Alertas de oposición vinculadas a cartera: {len(alertas_oposicion)}; notificaciones sin acta en cartera: {sin_vinculo}.")
     return alertas_oposicion
