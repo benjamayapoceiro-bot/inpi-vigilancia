@@ -307,19 +307,33 @@ def run():
             if not row:
                 continue
             estado_nuevo = (row.get("Estado") or "").strip()
-            # Normalizar
+            # Normalizar códigos del portal. La consulta se ejecuta para TODA
+            # la cartera con acta, no sólo para marcas con alertas previas.
             mapa = {"C":"Concedida","R":"Registrada","T":"En trámite","D":"Denegada","V":"Vencida","A":"Abandonada","O":"En oposición","P":"Publicada","S":"Solicitada"}
-            estado_norm = mapa.get(estado_nuevo, estado_nuevo) or None
+            estado_norm = mapa.get(estado_nuevo.upper(), estado_nuevo) or None
             estado_viejo = (m.get("estado") or "").strip()
-            if estado_norm and estado_norm != estado_viejo:
-                # Actualizar cartera
+            if estado_norm and estado_norm.casefold() != estado_viejo.casefold():
+                fecha_venc = row.get("Fecha_Vencimiento")
+                patch = {"estado": estado_norm}
+                if fecha_venc:
+                    try:
+                        patch["fecha_vencimiento"] = datetime.fromtimestamp(
+                            int(re.sub(r"\\D", "", str(fecha_venc))) / 1000,
+                            tz=timezone.utc
+                        ).date().isoformat()
+                    except (ValueError, TypeError, OSError):
+                        pass
                 try:
-                    supabase_patch("marcas_vigiladas", m["id"], {"estado": estado_norm})
+                    supabase_patch("marcas_vigiladas", m["id"], patch)
+                    m["estado"] = estado_norm
                 except Exception as e:
                     reportar_a_supabase(f"No se pudo actualizar estado de {m['id']} {m.get('nombre')}: {e}")
-                # Generar alerta de resolución
+                # El mail usa estos campos para identificar correctamente la
+                # marca del estudio y describir el cambio de estado.
                 resoluciones.append({
                     "marca_vigilada_id": m["id"],
+                    "marca_vigilada": m.get("nombre") or row.get("Denominacion") or "Marca vigilada",
+                    "cliente": m.get("cliente") or "",
                     "tipo_match": "resolucion",
                     "acta_nueva": m["numero_acta"],
                     "denominacion_nueva": row.get("Denominacion") or m.get("nombre"),
@@ -332,15 +346,20 @@ def run():
                     "similitud_fonetica": 1.0,
                     "similitud_score": 1.0,
                     "score_ajustado": 1.0,
-                    "nivel_riesgo": "alto",
+                    "nivel_riesgo": "informativo",
                     "requiere_oposicion": False,
                     "borrador_oposicion": None,
                     "fecha_publicacion": datetime.now(timezone.utc).date().isoformat(),
                     "fecha_limite_oposicion": None,
                     "enlace_inpi": f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={m['numero_acta']}",
-                    "evidencia": [{"metodo":"resolucion","estado_nuevo":estado_norm,"estado_viejo":estado_viejo}],
+                    "evidencia": [{
+                        "metodo":"resolucion",
+                        "estado_nuevo":estado_norm,
+                        "estado_viejo":estado_viejo or "Sin estado previo",
+                        "numero_resolucion": str(row.get("Numero_Resolucion") or ""),
+                    }],
                 })
-                reportar_a_supabase(f"Resolución detectada: {m.get('nombre')} ({m['numero_acta']}) {estado_viejo} → {estado_norm}")
+                reportar_a_supabase(f"Resolución detectada: {m.get('nombre')} ({m['numero_acta']}) {estado_viejo or 'sin estado'} → {estado_norm}")
         except Exception as e:
             reportar_a_supabase(f"Error chequeando resolución de {m.get('id')}: {e}")
             continue
