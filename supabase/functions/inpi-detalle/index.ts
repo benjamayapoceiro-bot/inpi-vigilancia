@@ -8,11 +8,11 @@ const cors = {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const { acta } = await req.json();
+    const { acta, force = false } = await req.json();
     if (!acta) return new Response(JSON.stringify({ ok: false, error: "acta requerida" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { data: cached } = await supabase.from("detalle_actas_inpi").select("*").eq("acta", String(acta)).limit(1).maybeSingle();
-    if (cached && cached.fetched_at) {
+    if (!force && cached && cached.fetched_at) {
       const ageMs = Date.now() - new Date(cached.fetched_at).getTime();
       if (ageMs < 30 * 24 * 3600 * 1000) {
         return new Response(JSON.stringify({ ok: true, data: cached, cached: true }), { headers: { ...cors, "Content-Type": "application/json" } });
