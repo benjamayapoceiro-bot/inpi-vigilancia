@@ -33,7 +33,7 @@ def normalizar_fonetico(s: str) -> str:
     """Clave fonética conservadora para español rioplatense.
     Seseo, yeísmo y B/V; preserva CH, Ñ y W como contrastes propios."""
     original = str(s or "").upper()
-    original = original.replace("Ñ", "{ENIE}").replace("CH", "{CHE}")
+    original = original.replace("Ñ", "\ue000").replace("CH", "\ue001")
     s = _sin_acentos(original).replace("&", " Y ")
     s = re.sub(r"QU", "K", s)
     s = s.replace("GUE", "G#E").replace("GUI", "G#I")  # G dura en GUE/GUI
@@ -42,7 +42,7 @@ def normalizar_fonetico(s: str) -> str:
     s = s.replace("Z", "S").replace("V", "B").replace("LL", "Y")
     s = re.sub(r"G(?=[EI])", "J", s)
     s = s.replace("G#", "G").replace("H", "").replace("PH", "F")
-    s = s.replace("{ENIE}", "Ñ").replace("{CHE}", "CH")
+    s = s.replace("\ue000", "Ñ").replace("\ue001", "CH")
     s = re.sub(r"(.)\1+", r"\1", s)
     s = re.sub(r"[^A-Z0-9Ñ]", "", s)
     return s
