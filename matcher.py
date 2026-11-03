@@ -144,7 +144,12 @@ def similitud(a: str, b: str, relacion: str = None) -> dict:
         contraste_enie = a_norm.replace("Ñ", "N") == b_norm
         contraste_enie_inv = b_norm.replace("Ñ", "N") == a_norm
         contraste_w_b = a_norm.replace("W", "B") == b_norm or b_norm.replace("W", "B") == a_norm
-        if contraste_ch_y or contraste_enie or contraste_enie_inv or contraste_w_b:
+        inicio_fonetico_distinto = (
+            len(palabras_a) == 1 and len(palabras_b) == 1
+            and len(a_norm) >= 4 and len(b_norm) >= 4
+            and a_norm[0] != b_norm[0] and ortografica < 0.90
+        )
+        if contraste_ch_y or contraste_enie or contraste_enie_inv or contraste_w_b or inicio_fonetico_distinto:
             score = min(score, 0.59)
 
     # Bonus prefijo: marcas que arrancan igual suelen ser el mismo núcleo.
