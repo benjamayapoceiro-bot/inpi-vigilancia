@@ -17,7 +17,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function envelopeConsultaDenominacion(denominacion: string): string {
+function envelopeConsultaDenominacion(denominacion: string, tokenIntegrador: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
   <soap:Header/>
@@ -29,7 +29,7 @@ function envelopeConsultaDenominacion(denominacion: string): string {
 </soap:Envelope>`;
 }
 
-function envelopeConsultaCuitOTitular(cuit: string, titular = ""): string {
+function envelopeConsultaCuitOTitular(cuit: string, titular = "", tokenIntegrador: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
   <soap:Header/>
@@ -110,10 +110,10 @@ Deno.serve(async (req: Request) => {
 
     if (tipo === "denominacion") {
       soapAction = "http://tempuri.org/ConsultaDenominacion";
-      envelope = envelopeConsultaDenominacion(valor);
+      envelope = envelopeConsultaDenominacion(valor, tokenIntegrador);
     } else if (tipo === "cuit") {
       soapAction = "http://tempuri.org/ConsultaCuitOTitular";
-      envelope = envelopeConsultaCuitOTitular(valor, titular || "");
+      envelope = envelopeConsultaCuitOTitular(valor, titular || "", tokenIntegrador);
     } else {
       return new Response(JSON.stringify({ ok: false, error: `tipo desconocido: ${tipo}` }), {
         status: 400,
