@@ -24,6 +24,10 @@ class MatchingFoneticoTests(unittest.TestCase):
         resultado = similitud("CHICO", "YICO")
         self.assertLess(resultado["score"], 0.60)
 
+    def test_penaliza_inicio_fonetico_distinto_en_palabra_unica(self):
+        resultado = similitud("GUERRA", "JERRA")
+        self.assertLess(resultado["score"], 0.60)
+
     def test_no_colapsa_enie_con_n(self):
         self.assertNotEqual(normalizar_fonetico("PEÑA"), normalizar_fonetico("PENA"))
         resultado = similitud("PEÑA", "PENA")
