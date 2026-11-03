@@ -364,6 +364,18 @@ def run():
             reportar_a_supabase(f"Error chequeando resolución de {m.get('id')}: {e}")
             continue
     if resoluciones:
+        # Las resoluciones usan boletin_numero=0, cuya fila padre satisface
+        # la FK de alertas. Se asegura aunque no haya oposiciones recibidas.
+        try:
+            supabase_upsert("boletines_procesados", [{
+                "numero_boletin": "0",
+                "tipo": "SISTEMA",
+                "estado": "completo",
+                "actas_encontradas": 0,
+                "ultimo_error": None,
+            }], "numero_boletin")
+        except Exception as e:
+            reportar_a_supabase(f"WARN no se pudo asegurar boletín SISTEMA 0 para resoluciones: {e}")
         # El mail es el camino crítico: se agregan ANTES de persistir para
         # que un fallo de upsert no las borre del resumen (CRON-04).
         todas_las_alertas_fuertes.extend(resoluciones)
