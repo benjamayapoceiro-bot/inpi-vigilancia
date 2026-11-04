@@ -1,7 +1,3 @@
-storage upload intento 1/3 falló para actas/11138/4778578.png: 520 Server Error: <none> for url: https://oomczohvjqycpuhhmotv.supabase.co/storage/v1/object/logos-marcas/actas/11138/4778578.png <!DOCTYPE html>
-<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->
-<!--[if IE 7]>    <html class="no-js ie7 oldie" lang="en-US"> <![endif]-->
-<!--[if IE 8]>    <html class="no-
 Mail enviado a estudio FONS LEGAL - ADMIN <benjamayapoceiro@gmail.com>.
 Mail enviado a estudio Estudio <fernando@promage.com.ar>.
 Mail de resumen enviado.
