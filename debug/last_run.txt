@@ -1,5 +1,4 @@
 Mail enviado a estudio FONS LEGAL - ADMIN <benjamayapoceiro@gmail.com>.
-Mail enviado a estudio Estudio <fernando@promage.com.ar>.
 Mail de resumen enviado.
 --- curl directo a Supabase ---
 HTTP_STATUS:201
